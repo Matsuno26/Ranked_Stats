@@ -1,0 +1,13 @@
+{
+  "name": "ranked-stats",
+  "version": "1.0.0",
+  "description": "Suivi de progression ranked (Valorant, Overwatch, Rocket League, Rainbow Six Siege)",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20.12"
+  }
+}

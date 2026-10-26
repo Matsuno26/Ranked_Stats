@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ranked Stats</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23ff4655'/><path d='M7 22l6-7 5 4 7-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    .toolbar .lead { margin: 0; }
+
+    /* Aperçu */
+    .overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-bottom: 28px; }
+    .tile { padding: 16px; display: grid; gap: 10px; cursor: pointer; text-align: left; position: relative; overflow: hidden; }
+    .tile::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--game); }
+    .tile:hover { border-color: color-mix(in srgb, var(--game) 50%, transparent); }
+    .tile-head { display: flex; align-items: center; gap: 10px; }
+    .tile-head .game-badge { width: 30px; height: 30px; font-size: 12px; border-radius: 8px; }
+    .tile-name { font-weight: 600; color: var(--text-2); font-size: 14px; }
+    .tile-queue { margin-left: auto; font-size: 12px; color: var(--muted); }
+    .tile-rank { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
+    .tile-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+    .tile-value { color: var(--muted); font-size: 13px; }
+    .tile svg { display: block; }
+
+    .delta { font-weight: 700; font-size: 14px; white-space: nowrap; }
+    .delta.up { color: var(--up-text); }
+    .delta.down { color: var(--down-text); }
+    .delta.flat { color: var(--muted); }
+
+    /* Détail par jeu */
+    .details { display: grid; gap: 18px; }
+    .panel { padding: 20px; }
+    .panel-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .panel-head h2 { margin: 0; font-size: 18px; }
+    .panel-head .player { color: var(--muted); font-size: 13px; }
+    .queues { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 18px 0 8px; }
+    .stat { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+    .stat-label { font-size: 12px; color: var(--muted); }
+    .stat-value { font-size: 18px; font-weight: 700; }
+    .stat-sub { font-size: 12px; color: var(--text-2); }
+    .chart { position: relative; margin-top: 10px; }
+    .chart svg { display: block; width: 100%; overflow: visible; }
+    .chart .empty-note { position: absolute; top: 70px; left: 0; right: 0; text-align: center; color: var(--muted); font-size: 13px; pointer-events: none; }
+    .tooltip {
+      position: absolute; pointer-events: none; z-index: 5; min-width: 150px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px;
+      box-shadow: 0 6px 24px rgba(0,0,0,.35); font-size: 13px; display: none;
+    }
+    .tooltip .tt-time { color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+    .tooltip .tt-main { font-weight: 700; }
+    .tooltip .tt-row { display: flex; justify-content: space-between; gap: 14px; color: var(--text-2); }
+    .panel-foot { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    .err { color: var(--down-text); font-size: 13px; }
+
+    .empty { text-align: center; padding: 60px 20px; }
+    .empty h2 { margin: 0 0 8px; }
+    .empty p { color: var(--text-2); margin: 0 0 18px; }
+
+    .axis-label { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .grid-line { stroke: var(--hairline); stroke-width: 1; }
+    .base-line { stroke: var(--axis); stroke-width: 1; }
+    .spin { display: inline-block; }
+    .loading .spin { animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/"><span class="brand-mark">R</span>Ranked Stats</a>
+    <nav class="nav">
+      <a href="/" aria-current="page">Stats</a>
+      <a href="/reglages">Réglages</a>
+    </nav>
+    <div class="top-right">
+      <span id="updated"></span>
+      <button class="btn" id="refresh" type="button"><span class="spin">↻</span> Actualiser</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="banner"></div>
+    <div class="toolbar">
+      <div>
+        <h1>Ta progression</h1>
+        <p class="lead" id="period-label">Variation sur la dernière heure</p>
+      </div>
+      <div class="seg" role="group" aria-label="Échelle de temps" id="scale">
+        <button type="button" data-scale="minute">Minute</button>
+        <button type="button" data-scale="hour">Heure</button>
+        <button type="button" data-scale="day">Jour</button>
+        <button type="button" data-scale="week">Semaine</button>
+      </div>
+    </div>
+
+    <section class="overview" id="overview"></section>
+    <section class="details" id="details"></section>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

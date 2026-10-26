@@ -1,0 +1,23 @@
+# Déploiement sur Render (https://render.com) : New → Blueprint → choisir ce dépôt.
+# Les clés API et le mot de passe admin se renseignent dans le tableau de bord Render (jamais dans le dépôt).
+services:
+  - type: web
+    name: ranked-stats
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/config
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: HOST
+        value: 0.0.0.0
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: HENRIK_API_KEY
+        sync: false
+      - key: BALLCHASING_API_KEY
+        sync: false
+      - key: R6DATA_API_KEY
+        sync: false

@@ -1,0 +1,142 @@
+:root {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #232321;
+  --hairline: #2c2c2a;
+  --axis: #383835;
+  --text: #f0efec;
+  --text-2: #c3c2b7;
+  --muted: #898781;
+  --border: rgba(255, 255, 255, 0.10);
+  --up: #0ca30c;
+  --down: #d03b3b;
+  --up-text: #22c55e;
+  --down-text: #f26b6b;
+  --focus: #3987e5;
+  --radius: 14px;
+
+  --valorant: #ff4655;
+  --overwatch: #f99e1a;
+  --rocketleague: #3987e5;
+  --r6: #1baf7a;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --page: #f4f4f1;
+    --surface: #fcfcfb;
+    --surface-2: #f0efec;
+    --hairline: #e1e0d9;
+    --axis: #c3c2b7;
+    --text: #0b0b0b;
+    --text-2: #52514e;
+    --muted: #898781;
+    --border: rgba(11, 11, 11, 0.10);
+    --up-text: #006300;
+    --down-text: #b42323;
+    --focus: #2a78d6;
+    --valorant: #e8364a;
+    --overwatch: #e08600;
+    --rocketleague: #2a78d6;
+    --r6: #14996a;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  min-height: 100vh;
+}
+a { color: inherit; }
+button, input, select { font: inherit; color: inherit; }
+
+/* ---------- En-tête */
+.top {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px max(16px, calc((100vw - 1120px) / 2));
+  background: color-mix(in srgb, var(--page) 85%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -0.01em; text-decoration: none; }
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+  background: conic-gradient(from 210deg, var(--valorant), var(--overwatch), var(--rocketleague), var(--r6), var(--valorant));
+  color: #fff; font-size: 15px; font-weight: 800;
+}
+.nav { display: flex; gap: 4px; margin-left: 8px; }
+.nav a { text-decoration: none; padding: 6px 12px; border-radius: 8px; color: var(--text-2); }
+.nav a:hover { background: var(--surface-2); color: var(--text); }
+.nav a[aria-current="page"] { background: var(--surface-2); color: var(--text); font-weight: 600; }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
+
+main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.02em; }
+.lead { color: var(--text-2); margin: 0 0 24px; }
+
+/* ---------- Boutons et champs */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  padding: 8px 14px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 14px;
+}
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--text); color: var(--page); border-color: transparent; }
+.btn.primary:hover { opacity: 0.9; }
+.btn.ghost { background: transparent; }
+.btn:disabled { opacity: 0.5; cursor: progress; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field label { font-size: 13px; color: var(--text-2); font-weight: 600; }
+.field input, .field select {
+  width: 100%; padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--page);
+}
+.field input:focus, .field select:focus { border-color: var(--focus); outline: none; }
+.field small { color: var(--muted); font-size: 12px; }
+
+.seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; }
+.seg button { border: 0; background: transparent; padding: 6px 14px; border-radius: 8px; cursor: pointer; color: var(--text-2); font-weight: 600; font-size: 14px; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+
+.chip { border: 1px solid var(--border); background: transparent; padding: 4px 10px; border-radius: 999px; font-size: 13px; cursor: pointer; color: var(--text-2); }
+.chip[aria-pressed="true"] { background: var(--surface-2); color: var(--text); border-color: var(--muted); }
+
+/* ---------- Badges de jeux */
+.game-badge {
+  width: 40px; height: 40px; flex: none; border-radius: 10px; display: grid; place-items: center;
+  font-weight: 800; font-size: 14px; color: #fff; background: var(--game);
+  letter-spacing: -0.02em;
+}
+[data-game="valorant"] { --game: var(--valorant); }
+[data-game="overwatch"] { --game: var(--overwatch); }
+[data-game="rocketleague"] { --game: var(--rocketleague); }
+[data-game="r6"] { --game: var(--r6); }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+
+.toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px);
+  background: var(--text); color: var(--page); padding: 10px 16px; border-radius: 10px; font-weight: 600;
+  opacity: 0; transition: .2s; pointer-events: none; z-index: 50;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+.banner {
+  display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); margin-bottom: 20px; font-size: 14px;
+}
+.banner strong { color: var(--text); }
+.banner .btn { margin-left: auto; }
+
+@media (max-width: 640px) {
+  .top { flex-wrap: wrap; gap: 10px; }
+  .top-right { width: 100%; margin-left: 0; justify-content: space-between; }
+  .nav { margin-left: auto; }
+}

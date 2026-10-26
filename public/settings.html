@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ranked Stats · Réglages</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23ff4655'/><path d='M7 22l6-7 5 4 7-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .games { display: grid; gap: 14px; }
+    .game { padding: 18px 20px; transition: border-color .15s; }
+    .game.on { border-color: color-mix(in srgb, var(--game) 55%, transparent); }
+    .game-head { display: flex; align-items: center; gap: 14px; cursor: pointer; user-select: none; }
+    .game-head h2 { margin: 0; font-size: 17px; }
+    .game-head p { margin: 0; color: var(--muted); font-size: 13px; }
+    .switch { margin-left: auto; position: relative; width: 46px; height: 26px; flex: none; }
+    .switch input { opacity: 0; position: absolute; inset: 0; margin: 0; cursor: pointer; }
+    .switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--axis); transition: .15s; pointer-events: none; }
+    .switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .15s; }
+    .switch input:checked + span { background: var(--game); }
+    .switch input:checked + span::after { transform: translateX(20px); }
+    .switch input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+    .game-body { display: none; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+    .game.on .game-body { display: block; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+    .help { margin: 14px 0 0; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); color: var(--text-2); font-size: 13px; }
+    .help a { color: var(--text); }
+    .test-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+    .test-out { font-size: 13px; color: var(--text-2); }
+    .test-out.ok { color: var(--up-text); }
+    .test-out.err { color: var(--down-text); }
+    .general { padding: 18px 20px; margin-top: 22px; }
+    .general h2 { margin: 0 0 14px; font-size: 17px; }
+    .check { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .check input { width: 18px; height: 18px; accent-color: var(--focus); }
+    .actions { position: sticky; bottom: 0; display: flex; gap: 10px; justify-content: flex-end; padding: 16px 0; margin-top: 10px;
+      background: linear-gradient(transparent, var(--page) 40%); }
+    .danger { color: var(--down-text); }
+    .admin-input { width: 200px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--page); }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/"><span class="brand-mark">R</span>Ranked Stats</a>
+    <nav class="nav">
+      <a href="/">Stats</a>
+      <a href="/reglages" aria-current="page">Réglages</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Tes jeux</h1>
+    <p class="lead">Coche les jeux que tu joues en ranked et indique comment retrouver ton compte.</p>
+
+    <div class="games" id="games"></div>
+
+    <section class="card general">
+      <h2>Général</h2>
+      <div class="grid">
+        <div class="field">
+          <label for="pollMinutes">Actualiser toutes les</label>
+          <select id="pollMinutes">
+            <option value="1">1 minute</option>
+            <option value="2">2 minutes</option>
+            <option value="5">5 minutes</option>
+            <option value="10">10 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60">1 heure</option>
+          </select>
+          <small>Le site garde l'historique tant que le serveur tourne.</small>
+        </div>
+        <div class="field">
+          <label>Mode démo</label>
+          <label class="check"><input type="checkbox" id="demo"> Afficher des données fictives</label>
+          <small>Pratique pour voir le rendu. Décoche-le pour afficher tes vraies stats.</small>
+        </div>
+      </div>
+      <div class="test-row">
+        <button class="btn ghost danger" id="clear" type="button">Effacer tout l'historique</button>
+      </div>
+    </section>
+
+    <div class="actions">
+      <input id="admin" class="admin-input" type="password" placeholder="Mot de passe admin" aria-label="Mot de passe admin" hidden>
+      <a class="btn ghost" href="/">Annuler</a>
+      <button class="btn primary" id="save" type="button">Enregistrer</button>
+    </div>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const GAMES = [
+      {
+        id: 'valorant', name: 'Valorant', short: 'V', desc: 'ELO / RR par match',
+        fields: [
+          { k: 'name', label: 'Pseudo Riot', ph: 'TonPseudo' },
+          { k: 'tag', label: 'Tag', ph: 'EUW', hint: 'Ce qui suit le # dans ton Riot ID' },
+          { k: 'region', label: 'Région', type: 'select', options: [['eu', 'Europe'], ['na', 'Amérique du Nord'], ['ap', 'Asie-Pacifique'], ['kr', 'Corée'], ['latam', 'LATAM'], ['br', 'Brésil']] },
+          { k: 'platform', label: 'Plateforme', type: 'select', options: [['pc', 'PC'], ['console', 'Console']] },
+        ],
+        help: 'Ton Riot ID est affiché sur ton profil Riot (ex : <b>Pseudo#EUW</b>). L\'historique de tes derniers matchs classés est récupéré automatiquement.',
+      },
+      {
+        id: 'overwatch', name: 'Overwatch 2', short: 'OW', desc: 'Rang par rôle (SR estimé)',
+        fields: [
+          { k: 'battletag', label: 'BattleTag', ph: 'Pseudo#1234' },
+          { k: 'platform', label: 'Plateforme', type: 'select', options: [['pc', 'PC'], ['console', 'Console']] },
+        ],
+        help: 'Ton profil doit être <b>public</b> : en jeu, Options → Social → Visibilité du profil de carrière → Public. Overwatch ne donne pas le MMR : le site convertit ton rang en SR (Bronze 5 = 1000, chaque palier = 100).',
+      },
+      {
+        id: 'rocketleague', name: 'Rocket League', short: 'RL', desc: 'Rang par mode (1v1, 2v2, 3v3…)',
+        fields: [
+          { k: 'platform', label: 'Plateforme', type: 'select', options: [['epic', 'Epic Games'], ['steam', 'Steam'], ['ps4', 'PlayStation'], ['xbox', 'Xbox'], ['switch', 'Switch']] },
+          { k: 'name', label: 'Pseudo en jeu', ph: 'TonPseudo' },
+          { k: 'playerId', label: 'ID de plateforme (optionnel)', ph: 'ex : 7656119…', hint: 'Plus fiable que le pseudo si tu le connais' },
+        ],
+        help: 'Tes rangs sont lus sur <a href="https://ballchasing.com" target="_blank" rel="noopener">ballchasing.com</a> : installe <a href="https://bakkesmod.com" target="_blank" rel="noopener">BakkesMod</a> (PC) et active l\'upload automatique de tes replays ranked vers ballchasing.',
+      },
+      {
+        id: 'r6', name: 'Rainbow Six Siege', short: 'R6', desc: 'Rank points (RP)',
+        fields: [
+          { k: 'name', label: 'Pseudo Ubisoft', ph: 'TonPseudo' },
+          { k: 'platform', label: 'Plateforme', type: 'select', options: [['uplay', 'PC (Ubisoft Connect)'], ['psn', 'PlayStation'], ['xbl', 'Xbox']] },
+        ],
+        help: 'Ton pseudo Ubisoft Connect exact (celui affiché en jeu).',
+      },
+    ];
+
+    const $ = (s, el = document) => el.querySelector(s);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let config;
+
+    function toast(msg) {
+      const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+      clearTimeout(toast.timer); toast.timer = setTimeout(() => t.classList.remove('show'), 2200);
+    }
+
+    function render() {
+      $('#games').innerHTML = GAMES.map((g) => {
+        const c = config.games[g.id];
+        const fields = g.fields.map((f) => {
+          const id = `${g.id}-${f.k}`;
+          const input = f.type === 'select'
+            ? `<select id="${id}" data-k="${f.k}">${f.options.map(([v, l]) => `<option value="${v}" ${c[f.k] === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`
+            : `<input id="${id}" data-k="${f.k}" type="${f.type || 'text'}" value="${esc(c[f.k])}" placeholder="${esc(f.ph || '')}" autocomplete="off" spellcheck="false">`;
+          return `<div class="field"><label for="${id}">${f.label}</label>${input}${f.hint ? `<small>${f.hint}</small>` : ''}</div>`;
+        }).join('');
+        return `
+          <section class="card game ${c.enabled ? 'on' : ''}" data-game="${g.id}">
+            <div class="game-head">
+              <div class="game-badge">${g.short}</div>
+              <div><h2>${g.name}</h2><p>${g.desc}</p></div>
+              <label class="switch" title="Activer ${g.name}"><input type="checkbox" data-k="enabled" ${c.enabled ? 'checked' : ''} aria-label="Activer ${g.name}"><span></span></label>
+            </div>
+            <div class="game-body">
+              <div class="grid">${fields}</div>
+              <p class="help">${g.help}</p>
+              <div class="test-row">
+                <button class="btn" type="button" data-test>Tester la connexion</button>
+                <span class="test-out" aria-live="polite"></span>
+              </div>
+            </div>
+          </section>`;
+      }).join('');
+
+      $('#pollMinutes').value = String(config.pollMinutes);
+      $('#demo').checked = !!config.demo;
+    }
+
+    function readGame(card) {
+      const out = {};
+      card.querySelectorAll('[data-k]').forEach((el) => { out[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value.trim(); });
+      return out;
+    }
+
+    function collect() {
+      const games = {};
+      document.querySelectorAll('.game').forEach((card) => { games[card.dataset.game] = readGame(card); });
+      return { pollMinutes: Number($('#pollMinutes').value), demo: $('#demo').checked, games };
+    }
+
+    document.addEventListener('click', async (e) => {
+      const head = e.target.closest('.game-head');
+      if (head && !e.target.closest('.switch')) {
+        const box = head.querySelector('input[type=checkbox]');
+        box.checked = !box.checked; box.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      const testBtn = e.target.closest('[data-test]');
+      if (testBtn) {
+        const card = testBtn.closest('.game');
+        const out = card.querySelector('.test-out');
+        testBtn.disabled = true; out.className = 'test-out'; out.textContent = 'Connexion…';
+        try {
+          const r = await post(`/api/test/${card.dataset.game}`, readGame(card)).then((x) => x.json());
+          if (r.ok) { out.className = 'test-out ok'; out.textContent = `✓ ${r.player || 'Compte trouvé'} — ${r.summary.join(' · ')}`; }
+          else { out.className = 'test-out err'; out.textContent = `✕ ${r.error}`; }
+        } catch (err) { out.className = 'test-out err'; out.textContent = '✕ Serveur injoignable'; }
+        testBtn.disabled = false;
+      }
+    });
+    document.addEventListener('change', (e) => {
+      if (e.target.matches('.switch input')) e.target.closest('.game').classList.toggle('on', e.target.checked);
+    });
+
+    $('#save').addEventListener('click', async () => {
+      const data = collect();
+      const anyOn = Object.values(data.games).some((g) => g.enabled);
+      if (anyOn && data.demo && confirm('Le mode démo est encore activé : tu verras des données fictives.\nLe désactiver pour afficher tes vraies stats ?')) data.demo = false;
+      const res = await post('/api/config', data);
+      if (res.status === 401) { toast('Mot de passe admin incorrect'); $('#admin').focus(); return; }
+      toast('Enregistré ✓');
+      setTimeout(() => { location.href = '/'; }, 700);
+    });
+
+    $('#clear').addEventListener('click', async () => {
+      if (!confirm('Effacer tout l\'historique enregistré ? (irréversible)')) return;
+      const res = await post('/api/clear', {});
+      if (res.status === 401) { toast('Mot de passe admin incorrect'); return; }
+      toast('Historique effacé');
+    });
+
+    // En ligne, les réglages sont protégés : le mot de passe admin est envoyé avec chaque modification.
+    function post(url, body) {
+      const pwd = $('#admin').value;
+      try { if (pwd) sessionStorage.setItem('rs.admin', pwd); } catch { /* stockage indisponible */ }
+      return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Password': pwd }, body: JSON.stringify(body) });
+    }
+
+    fetch('/api/config').then((r) => r.json()).then((c) => {
+      config = c; render();
+      if (c.locked) {
+        $('#admin').hidden = false;
+        try { $('#admin').value = sessionStorage.getItem('rs.admin') || ''; } catch { /* stockage indisponible */ }
+      }
+    });
+  </script>
+</body>
+</html>
