@@ -3,7 +3,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { exec } from 'node:child_process';
-import { PROVIDERS } from './src/providers.js';
+import { PROVIDERS, blizzardIdFor } from './src/providers.js';
 import { getPlayerHistory, mergeQueue } from './src/store.js';
 import { demoHistory, demoMeta } from './src/demo.js';
 
@@ -92,16 +92,19 @@ async function api(req, res, url) {
   const route = `${req.method} ${url.pathname}`;
   // Overwatch : Blizzard ne retrouve plus un joueur par BattleTag, on cherche par pseudo et le joueur choisit son profil.
   if (route === 'GET /api/ow-search') {
-    const name = String(url.searchParams.get('name') || '').split('#')[0].trim().slice(0, 40);
+    const tag = String(url.searchParams.get('name') || '').trim().slice(0, 50);
+    const name = tag.split('#')[0].trim();
     if (!name) return send(res, 400, { error: 'Pseudo manquant' });
     try {
       const r = await fetch(`https://overfast-api.tekrop.fr/players?name=${encodeURIComponent(name)}&limit=50`, { signal: AbortSignal.timeout(20000) });
       if (!r.ok) return send(res, 200, { ok: false, error: `Recherche Overwatch indisponible (erreur ${r.status})` });
       const body = await r.json();
+      const mine = tag.includes('#') ? (await blizzardIdFor(tag))?.toLowerCase() : null;
       const results = (body.results || []).map((p) => ({
         id: p.player_id, name: p.name, avatar: p.avatar, namecard: p.namecard, title: p.title, isPublic: !!p.is_public, updatedAt: (p.last_updated_at || 0) * 1000,
-      })).sort((a, b) => b.isPublic - a.isPublic || b.updatedAt - a.updatedAt);
-      return send(res, 200, { ok: true, total: body.total ?? results.length, results });
+        mine: !!mine && String(p.player_id).toLowerCase() === mine,
+      })).sort((a, b) => b.mine - a.mine || b.isPublic - a.isPublic || b.updatedAt - a.updatedAt);
+      return send(res, 200, { ok: true, total: body.total ?? results.length, results, mineFound: results.some((p) => p.mine) });
     } catch (e) {
       return send(res, 200, { ok: false, error: 'Recherche Overwatch injoignable' });
     }

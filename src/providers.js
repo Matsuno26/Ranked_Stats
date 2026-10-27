@@ -67,20 +67,53 @@ const OW_DIVS = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'master', 'g
 const OW_NAMES = { bronze: 'Bronze', silver: 'Argent', gold: 'Or', platinum: 'Platine', diamond: 'Diamant', master: 'Maître', grandmaster: 'Grand maître', champion: 'Champion', ultimate: 'Top 500' };
 const OW_ROLES = { tank: 'Tank', damage: 'Dégâts', support: 'Soutien', open: 'File libre' };
 
+// Blizzard ne retrouve plus certains joueurs par BattleTag sur OverFast. Son site, lui, redirige
+// /career/Pseudo-1234/ vers l'identifiant interne du compte : on suit cette redirection.
+const blizzardIds = new Map(); // BattleTag -> identifiant Blizzard
+export async function blizzardIdFor(battletag) {
+  const tag = String(battletag || '').trim().replace('#', '-');
+  if (!/^[^\s#/-]+-\d+$/.test(tag)) return null;
+  if (blizzardIds.has(tag)) return blizzardIds.get(tag);
+  const r = await fetch(`https://overwatch.blizzard.com/en-us/career/${encodeURIComponent(tag)}/`, { redirect: 'manual', signal: AbortSignal.timeout(15000) }).catch(() => null);
+  const m = (r?.headers.get('location') || '').match(/\/career\/([0-9a-f]+%7C[0-9a-f]+)\//i);
+  const id = m ? m[1] : null;
+  if (id) blizzardIds.set(tag, id);
+  return id;
+}
+
+// La redirection existe même pour un BattleTag qui n'a jamais joué : seule la page de carrière dit si le profil existe.
+async function blizzardProfileExists(id) {
+  const r = await fetch(`https://overwatch.blizzard.com/en-us/career/${id}/`, { signal: AbortSignal.timeout(15000) }).catch(() => null);
+  return r ? r.status !== 404 : null;
+}
+
 async function overwatch(cfg) {
-  // Identifiant Blizzard (choisi dans Mes comptes) en priorité : la recherche par BattleTag ne marche plus pour tout le monde.
-  const blizzardId = /^[0-9a-f]+(%7C|\|)[0-9a-f]+$/i.test(cfg.blizzardId || '') ? cfg.blizzardId.replace('|', '%7C') : '';
-  if (!blizzardId && !cfg.battletag) throw new Error('Renseigne ton BattleTag (ex : Pseudo#1234)');
-  const id = blizzardId || encodeURIComponent(cfg.battletag.trim().replace('#', '-'));
+  const picked = /^[0-9a-f]+(%7C|\|)[0-9a-f]+$/i.test(cfg.blizzardId || '') ? cfg.blizzardId.replace('|', '%7C') : '';
+  if (!picked && !cfg.battletag) throw new Error('Renseigne ton BattleTag (ex : Pseudo#1234)');
+  if (!picked && !/#\d+$/.test(cfg.battletag.trim())) throw new Error('Renseigne ton BattleTag complet, avec le # et les chiffres (ex : Pseudo#1234)');
+  const fetchSummary = (id) => getJson(`https://overfast-api.tekrop.fr/players/${id}/summary`, {}, 'OverFast');
+
   let body;
   try {
-    body = await getJson(`https://overfast-api.tekrop.fr/players/${id}/summary`, {}, 'OverFast');
+    body = await fetchSummary(picked || encodeURIComponent(cfg.battletag.trim().replace('#', '-')));
   } catch (e) {
-    if (!blizzardId && /introuvable/.test(e.message)) throw new Error('Profil introuvable par BattleTag : clique sur « Vérifier le compte » dans Mes comptes et choisis ton profil');
-    throw e;
+    if (picked || !/introuvable/.test(e.message)) throw e;
+    const id = await blizzardIdFor(cfg.battletag);
+    if (!id) throw e;
+    try {
+      body = await fetchSummary(id);
+    } catch (e2) {
+      if (!/introuvable/.test(e2.message)) throw e2;
+      const exists = await blizzardProfileExists(id);
+      if (exists === false) {
+        throw new Error(`Blizzard n'a aucun profil Overwatch pour ${cfg.battletag.trim()} : ce compte Battle.net n'a pas encore de carrière Overwatch 2 (vérifie que c'est bien le compte avec lequel tu joues).`);
+      }
+      throw new Error('Profil trouvé chez Blizzard mais pas encore lisible : réessaie dans une dizaine de minutes.');
+    }
   }
+  if (body?.privacy === 'private') throw new Error('Ton profil de carrière est privé : en jeu, Options → Social → Visibilité du profil de carrière → Public.');
   const comp = body?.competitive?.[cfg.platform || 'pc'];
-  if (!comp) throw new Error('Aucun rang trouvé : profil privé ou pas de placement cette saison (mets ta carrière en "Public" dans les options du jeu)');
+  if (!comp) throw new Error('Aucun rang trouvé : pas de placement en compétitif cette saison sur cette plateforme.');
   const now = Date.now();
   const queues = [];
   for (const [role, name] of Object.entries(OW_ROLES)) {

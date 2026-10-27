@@ -60,6 +60,7 @@
     }
     .profile::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--card) center / cover; opacity: .45; }
     .profile:hover:not(:disabled) { border-color: var(--game); }
+    .profile.mine { border-color: var(--game); box-shadow: 0 0 0 1px var(--game); }
     .profile:disabled { cursor: not-allowed; opacity: .45; }
     .profile img { width: 44px; height: 44px; border-radius: 8px; flex: none; }
     .profile b { display: block; font-size: 14px; }
@@ -158,17 +159,23 @@
 
     async function showPicker(card) {
       const box = card.querySelector('.picker');
-      const name = card.querySelector('[data-k="battletag"]').value.split('#')[0].trim();
+      const tag = card.querySelector('[data-k="battletag"]').value.trim();
+      const name = tag.split('#')[0].trim();
       box.innerHTML = '<p>Recherche des profils…</p>';
-      const r = await fetch(`/api/ow-search?name=${encodeURIComponent(name)}`).then((x) => x.json()).catch(() => ({ ok: false, error: 'Serveur injoignable' }));
+      const r = await fetch(`/api/ow-search?name=${encodeURIComponent(tag)}`).then((x) => x.json()).catch(() => ({ ok: false, error: 'Serveur injoignable' }));
       if (!r.ok) { box.innerHTML = `<p class="test-out err">✕ ${esc(r.error)}</p>`; return; }
       if (!r.results.length) { box.innerHTML = `<p class="test-out err">✕ Aucun profil Overwatch nommé « ${esc(name)} ». Vérifie l'orthographe.</p>`; return; }
       const pub = r.results.filter((p) => p.isPublic).length;
-      box.innerHTML = `<p>${r.results.length > 1 ? `${r.total} profils s'appellent « ${esc(name)} »` : 'Un profil trouvé'}. Choisis le tien grâce à ton avatar et ta carte de visite${pub < r.results.length ? ' (les profils privés ne peuvent pas être lus)' : ''} :</p>
+      const intro = r.mineFound
+        ? `Ton BattleTag correspond au profil marqué « C'est toi ».`
+        : tag.includes('#')
+          ? `Aucun de ces ${r.total} profils « ${esc(name)} » ne correspond à ${esc(tag)}. Si tu joues sur un autre compte, choisis-le ici :`
+          : `${r.total} profils s'appellent « ${esc(name)} ». Choisis le tien :`;
+      box.innerHTML = `<p>${intro}${pub < r.results.length ? ' Les profils privés ne peuvent pas être lus.' : ''}</p>
         <div class="picker-grid">${r.results.map((p) => `
-          <button class="profile" type="button" data-pick="${esc(p.id)}" data-avatar="${esc(p.avatar || '')}" style="--card: url('${esc(p.namecard || '')}')" ${p.isPublic ? '' : 'disabled'}>
+          <button class="profile${p.mine ? ' mine' : ''}" type="button" data-pick="${esc(p.id)}" data-avatar="${esc(p.avatar || '')}" style="--card: url('${esc(p.namecard || '')}')" ${p.isPublic ? '' : 'disabled'}>
             <img src="${esc(p.avatar || '')}" alt="" loading="lazy">
-            <span><b>${esc(p.name)}</b><small>${p.isPublic ? esc(p.title || 'Sans titre') : 'Profil privé'}</small></span>
+            <span><b>${esc(p.name)}${p.mine ? ' · C\'est toi' : ''}</b><small>${p.isPublic ? esc(p.title || 'Sans titre') : 'Profil privé'}</small></span>
           </button>`).join('')}</div>`;
     }
 
@@ -186,10 +193,9 @@
           out.className = 'test-out ok'; out.textContent = `✓ ${r.meta?.player || 'Compte trouvé'}${summary ? ' : ' + summary : ''}`;
         } else {
           out.className = 'test-out err'; out.textContent = `✕ ${r.error}`;
-          // Overwatch introuvable par BattleTag : on propose les profils du même nom.
-          if (card.dataset.game === 'overwatch' && !acc.blizzardId && /introuvable/i.test(r.error)) {
-            out.textContent = 'Blizzard ne retrouve pas ce BattleTag directement.';
-            await showPicker(card);
+          // Overwatch : en cas de souci, on propose de parcourir les profils qui portent ce pseudo.
+          if (card.dataset.game === 'overwatch' && !acc.blizzardId) {
+            card.querySelector('.picker').innerHTML = `<button class="btn ghost" type="button" data-showpicker>Voir les profils « ${esc(acc.battletag.split('#')[0])} » sur Overwatch</button>`;
           }
         }
       } catch { out.className = 'test-out err'; out.textContent = '✕ Serveur injoignable'; }
@@ -235,6 +241,7 @@
         showChosen(card);
         return verify(card);
       }
+      if (e.target.closest('[data-showpicker]')) return showPicker(card);
       if (e.target.closest('[data-repick]')) {
         card.querySelector('[data-k="blizzardId"]').value = ''; card.querySelector('[data-k="avatar"]').value = '';
         showChosen(card); card.querySelector('.test-out').textContent = '';
