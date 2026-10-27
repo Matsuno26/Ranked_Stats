@@ -2,7 +2,8 @@
 
 const ACCOUNT_GAMES = [
   {
-    id: 'valorant', name: 'Valorant', short: 'V', desc: 'ELO / RR par match', required: ['name', 'tag'],
+    id: 'valorant', name: 'Valorant', short: 'V', desc: 'ELO / RR par match',
+    art: 'https://media.valorant-api.com/maps/7eaecc1b-4337-bbf6-6ab9-04b8f06b3319/splash.png', artPos: 'center 40%', required: ['name', 'tag'],
     fields: [
       { k: 'name', label: 'Pseudo Riot', ph: 'TonPseudo' },
       { k: 'tag', label: 'Tag', ph: 'EUW', hint: 'Ce qui suit le # de ton Riot ID' },
@@ -12,7 +13,8 @@ const ACCOUNT_GAMES = [
     help: 'Ton Riot ID est affiché sur ton profil Riot (ex : <b>Pseudo#EUW</b>).',
   },
   {
-    id: 'overwatch', name: 'Overwatch 2', short: 'OW', desc: 'Rang par rôle (SR estimé)', required: ['battletag'],
+    id: 'overwatch', name: 'Overwatch 2', short: 'OW', desc: 'Rang par rôle (SR estimé)',
+    art: 'https://cdn.cloudflare.steamstatic.com/steam/apps/2357570/library_hero.jpg', artPos: '55% 30%', required: ['battletag'],
     fields: [
       { k: 'battletag', label: 'BattleTag', ph: 'Pseudo#1234' },
       { k: 'platform', label: 'Plateforme', type: 'select', options: [['pc', 'PC'], ['console', 'Console']] },
@@ -20,7 +22,8 @@ const ACCOUNT_GAMES = [
     help: 'Ton profil doit être <b>public</b> : en jeu, Options → Social → Visibilité du profil de carrière → Public.',
   },
   {
-    id: 'rocketleague', name: 'Rocket League', short: 'RL', desc: 'Rang par mode (1v1, 2v2, 3v3…)', required: [['name', 'playerId']],
+    id: 'rocketleague', name: 'Rocket League', short: 'RL', desc: 'Rang par mode (1v1, 2v2, 3v3…)',
+    art: 'https://cdn.cloudflare.steamstatic.com/steam/apps/252950/library_hero.jpg', artPos: '65% center', required: [['name', 'playerId']],
     fields: [
       { k: 'name', label: 'Pseudo en jeu', ph: 'TonPseudo' },
       { k: 'platform', label: 'Plateforme', type: 'select', options: [['epic', 'Epic Games'], ['steam', 'Steam'], ['ps4', 'PlayStation'], ['xbox', 'Xbox'], ['switch', 'Switch']] },
@@ -29,7 +32,8 @@ const ACCOUNT_GAMES = [
     help: 'Tes rangs sont lus sur <a href="https://ballchasing.com" target="_blank" rel="noopener">ballchasing.com</a> : installe <a href="https://bakkesmod.com" target="_blank" rel="noopener">BakkesMod</a> (PC) et active l\'upload automatique de tes replays ranked.',
   },
   {
-    id: 'r6', name: 'Rainbow Six Siege', short: 'R6', desc: 'Rank points (RP)', required: ['name'],
+    id: 'r6', name: 'Rainbow Six Siege', short: 'R6', desc: 'Rank points (RP)',
+    art: 'https://cdn.cloudflare.steamstatic.com/steam/apps/359550/library_hero.jpg', artPos: '70% 30%', required: ['name'],
     fields: [
       { k: 'name', label: 'Pseudo Ubisoft', ph: 'TonPseudo' },
       { k: 'platform', label: 'Plateforme', type: 'select', options: [['uplay', 'PC (Ubisoft Connect)'], ['psn', 'PlayStation'], ['xbl', 'Xbox']] },

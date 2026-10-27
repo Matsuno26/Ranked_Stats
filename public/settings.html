@@ -11,8 +11,18 @@
   <link rel="stylesheet" href="style.css">
   <style>
     .games { display: grid; gap: 14px; }
-    .game { padding: 18px 20px; transition: border-color .15s; }
-    .game.filled { border-color: color-mix(in srgb, var(--game) 45%, var(--line)); background: radial-gradient(90% 140% at 0% 0%, color-mix(in srgb, var(--game) 14%, transparent), transparent 60%), var(--stand); }
+    .game { position: relative; isolation: isolate; overflow: hidden; padding: 18px 20px; transition: border-color .15s; }
+    /* Visuel du jeu en fond : ancré à droite et fondu vers la gauche pour que les champs restent lisibles. */
+    .game::before {
+      content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+      background: var(--art) var(--art-pos, center) / cover no-repeat;
+      mask-image: linear-gradient(100deg, transparent 18%, rgba(0,0,0,.55) 55%, #000 95%);
+      opacity: .42; transition: opacity .25s, filter .25s;
+    }
+    .game.off::before { opacity: .14; filter: grayscale(1); }
+    .game .field input, .game .field select { background: color-mix(in srgb, var(--arena) 88%, transparent); backdrop-filter: blur(6px); }
+    .game .help { text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+    .game.filled { border-color: color-mix(in srgb, var(--game) 45%, var(--line)); }
     .game.off { border-color: var(--border); }
     .game.off .game-body { display: none; }
     .game.off .game-head { margin-bottom: 0; opacity: .6; }
@@ -38,7 +48,15 @@
     .actions { position: sticky; bottom: 0; display: flex; gap: 10px; justify-content: flex-end; align-items: center; padding: 16px 0; margin-top: 10px;
       background: linear-gradient(transparent, var(--page) 40%); }
     .actions .note { margin-right: auto; color: var(--muted); font-size: 13px; }
-    @media (max-width: 640px) { .actions .note { display: none; } }
+    @media (max-width: 640px) {
+      .actions .note { display: none; }
+      /* Téléphone : le titre garde toute la largeur, l'état du jeu passe sur la ligne suivante */
+      .game-head { flex-wrap: wrap; row-gap: 8px; }
+      .game-head > div:nth-child(2) { flex: 1 1 0; min-width: 0; }
+      .game-head h2 { font-size: 23px; }
+      .game-head::after { content: ""; order: 4; flex-basis: 100%; } /* saut de ligne avant l'état */
+      .pill { order: 5; margin-left: 54px; }
+    }
   </style>
 </head>
 <body>
@@ -86,7 +104,7 @@
           return `<div class="field"><label for="${id}">${f.label}</label>${input}${f.hint ? `<small>${f.hint}</small>` : ''}</div>`;
         }).join('');
         return `
-          <section class="card game" data-game="${g.id}">
+          <section class="card game" data-game="${g.id}" style="--art: url('${g.art}'); --art-pos: ${g.artPos}">
             <div class="game-head">
               <div class="game-badge">${g.short}</div>
               <div><h2>${g.name}</h2><p>${g.desc}</p></div>
