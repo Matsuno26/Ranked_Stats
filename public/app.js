@@ -417,6 +417,15 @@ function render() {
   let wall = ''; let panels = '';
   games.forEach((game, gi) => {
     const info = GAME_INFO[game];
+    if (Accounts.isPending(game)) {
+      wall += `<div class="trophy pending soon" data-game="${game}" style="--i:${gi}">
+        <div class="trophy-top"><span class="trophy-game">${info.name}</span><span class="trophy-queue">Bientôt</span></div>
+        <div class="emblem">${drawnEmblem(info.name, game)}</div>
+        <div class="rank-name">Bientôt</div>
+        <div class="rank-value">En attente de l'API officielle de Psyonix</div>
+      </div>`;
+      return;
+    }
     const st = data.status[game] || {};
     const qs = data.history[game] || {};
     const qk = mainQueue(game);
@@ -502,13 +511,15 @@ async function load(force = false) {
   if (!mine.length) {
     const demo = await fetch('/api/demo').then((r) => r.json());
     const games = Accounts.enabledGames();
+    for (const g of games) if (Accounts.isPending(g)) delete demo.history[g];
     data = { demo: true, games, history: demo.history, status: Object.fromEntries(games.map((g) => [g, { ok: true, updatedAt: Date.now(), meta: demo.meta[g] }])) };
   } else {
     if (!data) $('#details').innerHTML = '<div class="card empty"><h2>Chargement de tes stats…</h2><p>La première visite peut prendre jusqu\'à une minute.</p></div>';
     const results = await Promise.all(mine.map(({ game, account }) => fetch('/api/player', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game, account, force }),
     }).then((r) => r.json()).catch(() => ({ game, ok: false, error: 'Serveur injoignable', history: {} }))));
-    data = { demo: false, games: mine.map((m) => m.game), history: {}, status: {} };
+    const order = Accounts.enabledGames();
+    data = { demo: false, games: order.filter((g) => Accounts.isPending(g) || mine.some((m) => m.game === g)), history: {}, status: {} };
     for (const r of results) {
       data.history[r.game] = r.history || {};
       data.status[r.game] = { ok: r.ok, error: r.error, updatedAt: r.updatedAt, meta: r.meta || {} };

@@ -138,7 +138,7 @@
               <p class="help">${g.help}</p>
               <div class="chosen"></div>
               <div class="test-row">
-                <button class="btn" type="button" data-test>Vérifier le compte</button>
+                <button class="btn" type="button" data-test ${g.pending ? 'disabled title="Bientôt disponible"' : ''}>Vérifier le compte</button>
                 <span class="test-out" aria-live="polite"></span>
               </div>
               <div class="picker" aria-live="polite"></div>
@@ -215,7 +215,7 @@
       const filled = Accounts.isFilled(card.dataset.game, acc);
       card.classList.toggle('off', !on);
       card.classList.toggle('filled', on && filled);
-      card.querySelector('.pill').textContent = !on ? 'Masqué' : filled ? '✓ Suivi' : 'Pseudo manquant';
+      card.querySelector('.pill').textContent = !on ? 'Masqué' : Accounts.isPending(card.dataset.game) ? 'Bientôt' : filled ? '✓ Suivi' : 'Pseudo manquant';
     }
 
     document.addEventListener('input', (e) => {

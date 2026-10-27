@@ -25,14 +25,14 @@ const ACCOUNT_GAMES = [
     help: 'Ton profil doit être <b>public</b>, sinon Blizzard le cache complètement (il est privé par défaut) : en jeu, Options → Social → Visibilité du profil de carrière → <b>Public</b>.',
   },
   {
-    id: 'rocketleague', name: 'Rocket League', short: 'RL', desc: 'Rang par mode (1v1, 2v2, 3v3…)',
+    id: 'rocketleague', name: 'Rocket League', short: 'RL', desc: 'Rang par mode (1v1, 2v2, 3v3…)', pending: true,
     art: 'https://cdn.cloudflare.steamstatic.com/steam/apps/252950/library_hero.jpg', artPos: '65% center', required: [['name', 'playerId']],
     fields: [
       { k: 'name', label: 'Pseudo en jeu', ph: 'TonPseudo' },
       { k: 'platform', label: 'Plateforme', type: 'select', options: [['epic', 'Epic Games'], ['steam', 'Steam'], ['ps4', 'PlayStation'], ['xbox', 'Xbox'], ['switch', 'Switch']] },
       { k: 'playerId', label: 'ID de plateforme (optionnel)', ph: 'ex : 7656119…', hint: 'Plus fiable que le pseudo' },
     ],
-    help: 'Tes rangs sont lus sur <a href="https://ballchasing.com" target="_blank" rel="noopener">ballchasing.com</a> : installe <a href="https://bakkesmod.com" target="_blank" rel="noopener">BakkesMod</a> (PC) et active l\'upload automatique de tes replays ranked.',
+    help: '<b>Bientôt disponible.</b> Depuis l\'anti-triche d\'avril 2026, plus aucun outil public ne donne le rang Rocket League. On attend l\'accès à l\'API officielle de Psyonix : tu peux déjà mettre ton pseudo, il servira dès que ce sera branché.',
   },
   {
     id: 'r6', name: 'Rainbow Six Siege', short: 'R6', desc: 'Rank points (RP)',
@@ -65,6 +65,8 @@ const Accounts = {
   },
   active() {
     const all = this.load();
-    return ACCOUNT_GAMES.filter((g) => this.isEnabled(g.id, all[g.id]) && this.isFilled(g.id, all[g.id])).map((g) => ({ game: g.id, account: all[g.id] }));
+    return ACCOUNT_GAMES.filter((g) => !g.pending && this.isEnabled(g.id, all[g.id]) && this.isFilled(g.id, all[g.id])).map((g) => ({ game: g.id, account: all[g.id] }));
   },
+  // Jeux pas encore branchés (en attente d'une source de données)
+  isPending(game) { return !!ACCOUNT_GAMES.find((g) => g.id === game)?.pending; },
 };

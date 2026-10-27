@@ -24,6 +24,7 @@ const ACCOUNT = {
 };
 
 const cache = new Map(); // playerKey -> { at, ok, error, meta, pending }
+const PENDING_GAMES = ['rocketleague']; // jeux sans source de données pour l'instant
 
 function cleanAccount(game, input = {}) {
   const out = {};
@@ -115,6 +116,8 @@ async function api(req, res, url) {
   if (route === 'POST /api/player') {
     const { game, account, force } = await readBody(req);
     if (!ACCOUNT[game]) return send(res, 400, { error: 'Jeu inconnu' });
+    // Rocket League : ballchasing ne donne plus de rang depuis l'anti-triche (avril 2026), en attente de l'API Psyonix.
+    if (PENDING_GAMES.includes(game)) return send(res, 200, { game, ok: false, pending: true, error: "Rocket League arrive bientôt : on attend l'accès à l'API officielle de Psyonix, la seule source fiable du rang, de la division et du MMR.", history: {} });
     return send(res, 200, await fetchPlayer(game, cleanAccount(game, account), !!force));
   }
   return send(res, 404, { error: 'Route inconnue' });
