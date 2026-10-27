@@ -27,7 +27,14 @@ const store = {
 
 let data = null;
 let scale = store.get('scale', 'hour');
-const selectedQueue = store.get('queues', {});
+const selected = store.get('selected', {}); // { [game]: [clés des modes affichés] }
+
+// Ordre fixe des modes : il fixe aussi leur couleur, qui ne change pas quand on (dé)sélectionne.
+const QUEUE_ORDER = {
+  rocketleague: ['ranked-duels', 'ranked-doubles', 'ranked-standard', 'ranked-solo-standard', 'ranked-hoops', 'ranked-rumble', 'ranked-dropshot', 'ranked-snowday'],
+  overwatch: ['tank', 'damage', 'support', 'open'],
+};
+const SERIES = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6', '--s7', '--s8'];
 
 /* ------------------------------------------------------------- Calculs */
 
@@ -90,12 +97,33 @@ function summary(points) {
   };
 }
 
-// File principale = celle qui a bougé le plus récemment.
+// Modes disponibles pour un jeu, dans l'ordre fixe.
+function queuesOf(game) {
+  const qs = data.history[game] || {};
+  const order = QUEUE_ORDER[game] || [];
+  const rank = (k) => (order.includes(k) ? order.indexOf(k) : 99);
+  return Object.keys(qs).filter((k) => qs[k].points?.length).sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}
+
+function queueColor(game, key) {
+  const i = Math.max(0, queuesOf(game).indexOf(key));
+  return getComputedStyle(document.documentElement).getPropertyValue(SERIES[i % SERIES.length]).trim();
+}
+
+// Modes affichés : la sélection du visiteur, sinon celui qui a bougé le plus récemment.
+function shownQueues(game) {
+  const keys = queuesOf(game);
+  const qs = data.history[game] || {};
+  const pick = (selected[game] || []).filter((k) => keys.includes(k));
+  if (pick.length) return pick.sort((a, b) => keys.indexOf(a) - keys.indexOf(b));
+  const recent = [...keys].sort((a, b) => qs[b].points.at(-1).t - qs[a].points.at(-1).t)[0];
+  return recent ? [recent] : [];
+}
+
+// Pour l'aperçu : parmi les modes affichés, celui qui a bougé le plus récemment.
 function mainQueue(game) {
   const qs = data.history[game] || {};
-  const keys = Object.keys(qs).filter((k) => qs[k].points?.length);
-  if (selectedQueue[game] && keys.includes(selectedQueue[game])) return selectedQueue[game];
-  return keys.sort((a, b) => qs[b].points.at(-1).t - qs[a].points.at(-1).t)[0] || null;
+  return [...shownQueues(game)].sort((a, b) => qs[b].points.at(-1).t - qs[a].points.at(-1).t)[0] || null;
 }
 
 /* ------------------------------------------------------------- Rendu */
@@ -250,6 +278,80 @@ function drawChart(container, s, color, unit) {
   });
 }
 
+// Plusieurs modes à la fois (ex : 1v1 + 2v2 + 3v3) : une courbe par mode sur la même échelle.
+function drawMulti(container, list, unit) {
+  const W = Math.max(280, container.clientWidth);
+  const pad = { l: 46, r: 14, t: 10 };
+  const lineH = 230; const axisH = 22;
+  const H = pad.t + lineH + axisH;
+  const n = list[0].s.length;
+  const plotW = W - pad.l - pad.r;
+  const slot = plotW / n;
+  const cx = (i) => pad.l + slot * (i + 0.5);
+
+  const vals = list.flatMap((q) => q.s.map((b) => b.v)).filter((v) => v != null);
+  const ticks = vals.length ? niceTicks(Math.min(...vals), Math.max(...vals)) : [0, 1];
+  const yMin = ticks[0]; const yMax = ticks[ticks.length - 1];
+  const y = (v) => pad.t + (1 - (v - yMin) / (yMax - yMin || 1)) * lineH;
+
+  let svg = '';
+  ticks.forEach((t) => {
+    svg += `<line class="grid-line" x1="${pad.l}" x2="${W - pad.r}" y1="${y(t)}" y2="${y(t)}"/>`;
+    svg += `<text class="axis-label" x="${pad.l - 8}" y="${y(t) + 4}" text-anchor="end">${fmt(t)}</text>`;
+  });
+  for (const q of list) {
+    let line = ''; let lastPt = null;
+    q.s.forEach((b, i) => { if (b.v == null) return; line += `${line ? 'L' : 'M'}${cx(i).toFixed(1)},${y(b.v).toFixed(1)}`; lastPt = [cx(i), y(b.v)]; });
+    if (!line) continue;
+    svg += `<path d="${line}" fill="none" stroke="${q.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    svg += `<circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="4.5" fill="${q.color}" stroke="var(--surface)" stroke-width="2"/>`;
+  }
+  const tick = SCALES[scale].tick;
+  list[0].s.forEach((b, i) => {
+    if ((n - 1 - i) % tick !== 0) return;
+    svg += `<text class="axis-label" x="${cx(i)}" y="${H - 4}" text-anchor="middle">${i === n - 1 ? 'maint.' : timeLabel(b.start, true)}</text>`;
+  });
+  svg += `<line class="crosshair" x1="0" x2="0" y1="${pad.t}" y2="${pad.t + lineH}" stroke="var(--muted)" stroke-width="1" visibility="hidden"/>`;
+  list.forEach((q) => { svg += `<circle class="hover-dot" r="5" fill="${q.color}" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>`; });
+  svg += `<rect class="hit" x="${pad.l}" y="0" width="${plotW}" height="${H}" fill="transparent"/>`;
+
+  const noData = list.every((q) => q.s.every((b) => b.n === 0));
+  container.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Évolution ${esc(unit)} par mode sur ${SCALES[scale].label}">${svg}</svg>
+    ${noData ? `<div class="empty-note">Aucun match sur ${SCALES[scale].label}</div>` : ''}
+    <div class="tooltip"></div>`;
+
+  const svgEl = container.querySelector('svg');
+  const tip = container.querySelector('.tooltip');
+  const cross = svgEl.querySelector('.crosshair');
+  const dots = [...svgEl.querySelectorAll('.hover-dot')];
+  const hit = svgEl.querySelector('.hit');
+  hit.addEventListener('mouseleave', () => { tip.style.display = 'none'; cross.setAttribute('visibility', 'hidden'); dots.forEach((d) => d.setAttribute('visibility', 'hidden')); });
+  hit.addEventListener('mousemove', (e) => {
+    const rect = svgEl.getBoundingClientRect();
+    const px = ((e.clientX - rect.left) / rect.width) * W;
+    const i = Math.max(0, Math.min(n - 1, Math.floor((px - pad.l) / slot)));
+    cross.setAttribute('x1', cx(i)); cross.setAttribute('x2', cx(i)); cross.setAttribute('visibility', 'visible');
+    let top = pad.t + lineH;
+    list.forEach((q, j) => {
+      const b = q.s[i];
+      if (b.v == null) { dots[j].setAttribute('visibility', 'hidden'); return; }
+      dots[j].setAttribute('cx', cx(i)); dots[j].setAttribute('cy', y(b.v)); dots[j].setAttribute('visibility', 'visible');
+      top = Math.min(top, y(b.v));
+    });
+    tip.innerHTML = `<div class="tt-time">${esc(rangeLabel(list[0].s[i]))}</div>` + list.map((q) => {
+      const b = q.s[i];
+      return `<div class="tt-row"><span><i class="swatch" style="background:${q.color}"></i>${esc(q.name)}</span><b>${b.v == null ? '—' : esc(b.l || fmt(b.v))}</b></div>
+        ${b.v == null ? '' : `<div class="tt-row tt-sub"><span>${fmt(b.v)} ${esc(unit)}</span>${deltaHtml(b.delta)}</div>`}`;
+    }).join('');
+    tip.style.display = 'block';
+    const scaleX = rect.width / W;
+    let left = cx(i) * scaleX + 14;
+    if (left + tip.offsetWidth > rect.width) left = cx(i) * scaleX - tip.offsetWidth - 14;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${Math.max(0, top * scaleX - 30)}px`;
+  });
+}
+
 function gameColor(game) { return getComputedStyle(document.documentElement).getPropertyValue(`--${game}`).trim(); }
 
 function render() {
@@ -286,16 +388,24 @@ function render() {
       </div>
     </button>`;
 
-    const chips = Object.entries(qs).filter(([, v]) => v.points?.length).map(([k, v]) => `<button class="chip" type="button" data-queue="${k}" aria-pressed="${k === qk}">${esc(v.name)}</button>`).join('');
+    const keys = queuesOf(game);
+    const shown = shownQueues(game);
+    const multi = shown.length > 1;
+    const chips = keys.length < 2 ? '' : keys.map((k) => `<button class="chip" type="button" data-queue="${k}" aria-pressed="${shown.includes(k)}">${multi && shown.includes(k) ? `<i class="swatch" style="background:${queueColor(game, k)}"></i>` : ''}${esc(qs[k].name)}</button>`).join('')
+      + (keys.length > 2 ? `<button class="chip" type="button" data-queue-all aria-pressed="${shown.length === keys.length}">Tous</button>` : '');
     const meta = st.meta || {};
     const wl = meta.wins != null ? `<div class="stat"><div class="stat-label">Victoires / défaites (saison)</div><div class="stat-value">${meta.wins} / ${meta.losses}</div><div class="stat-sub">${meta.wins + meta.losses ? Math.round((meta.wins / (meta.wins + meta.losses)) * 100) + ' % de victoires' : ''}</div></div>` : '';
     panels += `<section class="card panel" data-game="${game}" id="game-${game}">
       <div class="panel-head">
         <div class="game-badge">${info.short}</div>
         <div><h2>${info.name}</h2><div class="player">${esc(meta.player || '')}</div></div>
-        <div class="queues">${Object.keys(qs).length > 1 ? chips : ''}</div>
+        <div class="queues" role="group" aria-label="Modes affichés">${chips}</div>
       </div>
-      ${sum ? `<div class="stats">
+      ${sum && multi ? `<div class="stats">
+        ${shown.map((k) => { const qq = qs[k]; const ss = summary(qq.points); return `<div class="stat"><div class="stat-label"><i class="swatch" style="background:${queueColor(game, k)}"></i>${esc(qq.name)}</div><div class="stat-value">${esc(ss.current?.l || '—')}</div><div class="stat-sub">${ss.current ? fmt(ss.current.v) + ' ' + esc(qq.unit) : ''} · ${deltaHtml(ss.delta)}</div></div>`; }).join('')}
+        ${wl}
+      </div>
+      <div class="chart" data-chart="${game}"></div>` : sum ? `<div class="stats">
         <div class="stat"><div class="stat-label">Rang actuel</div><div class="stat-value">${esc(sum.current.l || '—')}</div><div class="stat-sub">${fmt(sum.current.v)} ${esc(q.unit)}</div></div>
         <div class="stat"><div class="stat-label">Variation (${SCALES[scale].label})</div><div class="stat-value">${deltaHtml(sum.delta)}</div><div class="stat-sub">${esc(q.unit)}</div></div>
         <div class="stat"><div class="stat-label">Pic sur la période</div><div class="stat-value">${sum.peak != null ? fmt(sum.peak) : '—'}</div><div class="stat-sub">${esc(q.unit)}</div></div>
@@ -316,8 +426,14 @@ function render() {
 function drawCharts() {
   document.querySelectorAll('[data-chart]').forEach((el) => {
     const game = el.dataset.chart;
-    const q = data.history[game][mainQueue(game)];
-    drawChart(el, series(q.points), gameColor(game), q.unit);
+    const shown = shownQueues(game);
+    const qs = data.history[game];
+    if (shown.length > 1) {
+      drawMulti(el, shown.map((k) => ({ name: qs[k].name, color: queueColor(game, k), s: series(qs[k].points) })), qs[shown[0]].unit);
+    } else {
+      const q = qs[shown[0]];
+      drawChart(el, series(q.points), gameColor(game), q.unit);
+    }
   });
 }
 
@@ -365,10 +481,16 @@ $('#scale').addEventListener('click', (e) => {
 });
 
 document.addEventListener('click', (e) => {
-  const chip = e.target.closest('[data-queue]');
+  // Modes : on peut en afficher un, plusieurs ou tous (au moins un reste toujours affiché).
+  const chip = e.target.closest('[data-queue], [data-queue-all]');
   if (chip) {
     const game = chip.closest('[data-game]').dataset.game;
-    selectedQueue[game] = chip.dataset.queue; store.set('queues', selectedQueue); render();
+    const all = queuesOf(game);
+    let cur = shownQueues(game);
+    if (chip.hasAttribute('data-queue-all')) cur = cur.length === all.length ? [mainQueue(game)] : all;
+    else if (cur.includes(chip.dataset.queue)) { if (cur.length > 1) cur = cur.filter((k) => k !== chip.dataset.queue); }
+    else cur = [...cur, chip.dataset.queue];
+    selected[game] = cur; store.set('selected', selected); render();
   }
   const tile = e.target.closest('[data-goto]');
   if (tile) document.getElementById(`game-${tile.dataset.goto}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
