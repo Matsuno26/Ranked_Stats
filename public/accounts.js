@@ -50,8 +50,14 @@ const Accounts = {
     const def = ACCOUNT_GAMES.find((g) => g.id === game);
     return !!acc && def.required.every((r) => (Array.isArray(r) ? r.some((k) => acc[k]?.trim()) : acc[r]?.trim()));
   },
+  // Un jeu décoché disparaît de la page Stats. Par défaut, tous les jeux sont cochés.
+  isEnabled(game, acc) { return acc?.enabled !== false; },
+  enabledGames() {
+    const all = this.load();
+    return ACCOUNT_GAMES.filter((g) => this.isEnabled(g.id, all[g.id])).map((g) => g.id);
+  },
   active() {
     const all = this.load();
-    return ACCOUNT_GAMES.filter((g) => this.isFilled(g.id, all[g.id])).map((g) => ({ game: g.id, account: all[g.id] }));
+    return ACCOUNT_GAMES.filter((g) => this.isEnabled(g.id, all[g.id]) && this.isFilled(g.id, all[g.id])).map((g) => ({ game: g.id, account: all[g.id] }));
   },
 };

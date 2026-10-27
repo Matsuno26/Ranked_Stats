@@ -263,7 +263,7 @@ function render() {
 
   if (!games.length) {
     $('#overview').innerHTML = '';
-    $('#details').innerHTML = `<div class="card empty"><h2>Aucun jeu activé</h2><p>Choisis tes jeux et renseigne tes comptes pour commencer le suivi.</p><a class="btn primary" href="/reglages">Ajouter mes jeux</a></div>`;
+    $('#details').innerHTML = `<div class="card empty"><h2>Aucun jeu coché</h2><p>Coche au moins un jeu dans Mes comptes pour voir des stats.</p><a class="btn primary" href="/reglages">Choisir mes jeux</a></div>`;
     return;
   }
 
@@ -334,7 +334,7 @@ async function load(force = false) {
   const mine = Accounts.active();
   if (!mine.length) {
     const demo = await fetch('/api/demo').then((r) => r.json());
-    const games = Object.keys(GAME_INFO);
+    const games = Accounts.enabledGames();
     data = { demo: true, games, history: demo.history, status: Object.fromEntries(games.map((g) => [g, { ok: true, updatedAt: Date.now(), meta: demo.meta[g] }])) };
   } else {
     if (!data) $('#details').innerHTML = '<div class="card empty"><h2>Chargement de tes stats…</h2><p>La première visite peut prendre jusqu\'à une minute.</p></div>';
