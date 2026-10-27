@@ -18,6 +18,9 @@ const ACCOUNT_GAMES = [
     fields: [
       { k: 'battletag', label: 'BattleTag', ph: 'Pseudo#1234' },
       { k: 'platform', label: 'Plateforme', type: 'select', options: [['pc', 'PC'], ['console', 'Console']] },
+      // Profil choisi dans la liste quand Blizzard ne retrouve pas le BattleTag
+      { k: 'blizzardId', type: 'hidden' },
+      { k: 'avatar', type: 'hidden' },
     ],
     help: 'Ton profil doit être <b>public</b> : en jeu, Options → Social → Visibilité du profil de carrière → Public.',
   },

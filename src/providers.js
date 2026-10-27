@@ -68,9 +68,17 @@ const OW_NAMES = { bronze: 'Bronze', silver: 'Argent', gold: 'Or', platinum: 'Pl
 const OW_ROLES = { tank: 'Tank', damage: 'Dégâts', support: 'Soutien', open: 'File libre' };
 
 async function overwatch(cfg) {
-  if (!cfg.battletag || !cfg.battletag.includes('#')) throw new Error('Renseigne ton BattleTag complet (ex : Pseudo#1234)');
-  const id = encodeURIComponent(cfg.battletag.trim().replace('#', '-'));
-  const body = await getJson(`https://overfast-api.tekrop.fr/players/${id}/summary`, {}, 'OverFast');
+  // Identifiant Blizzard (choisi dans Mes comptes) en priorité : la recherche par BattleTag ne marche plus pour tout le monde.
+  const blizzardId = /^[0-9a-f]+(%7C|\|)[0-9a-f]+$/i.test(cfg.blizzardId || '') ? cfg.blizzardId.replace('|', '%7C') : '';
+  if (!blizzardId && !cfg.battletag) throw new Error('Renseigne ton BattleTag (ex : Pseudo#1234)');
+  const id = blizzardId || encodeURIComponent(cfg.battletag.trim().replace('#', '-'));
+  let body;
+  try {
+    body = await getJson(`https://overfast-api.tekrop.fr/players/${id}/summary`, {}, 'OverFast');
+  } catch (e) {
+    if (!blizzardId && /introuvable/.test(e.message)) throw new Error('Profil introuvable par BattleTag : clique sur « Vérifier le compte » dans Mes comptes et choisis ton profil');
+    throw e;
+  }
   const comp = body?.competitive?.[cfg.platform || 'pc'];
   if (!comp) throw new Error('Aucun rang trouvé : profil privé ou pas de placement cette saison (mets ta carrière en "Public" dans les options du jeu)');
   const now = Date.now();

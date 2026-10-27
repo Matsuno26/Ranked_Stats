@@ -18,7 +18,7 @@ const CACHE_MS = 90e3; // un même compte n'est redemandé aux APIs qu'au bout d
 // Champs acceptés pour chaque jeu (le reste est ignoré) et identifiant unique du compte.
 const ACCOUNT = {
   valorant: { fields: ['name', 'tag', 'region', 'platform'], key: (a) => `${a.region || 'eu'}:${a.platform || 'pc'}:${a.name}#${a.tag}` },
-  overwatch: { fields: ['battletag', 'platform'], key: (a) => `${a.platform || 'pc'}:${a.battletag}` },
+  overwatch: { fields: ['battletag', 'platform', 'blizzardId'], key: (a) => `${a.platform || 'pc'}:${a.blizzardId || a.battletag}` },
   rocketleague: { fields: ['platform', 'name', 'playerId'], key: (a) => `${a.platform || 'epic'}:${a.playerId || a.name}` },
   r6: { fields: ['name', 'platform'], key: (a) => `${a.platform || 'uplay'}:${a.name}` },
 };
@@ -27,7 +27,7 @@ const cache = new Map(); // playerKey -> { at, ok, error, meta, pending }
 
 function cleanAccount(game, input = {}) {
   const out = {};
-  for (const f of ACCOUNT[game].fields) out[f] = String(input[f] ?? '').trim().slice(0, 64);
+  for (const f of ACCOUNT[game].fields) out[f] = String(input[f] ?? '').trim().slice(0, 100);
   return out;
 }
 
@@ -90,6 +90,22 @@ async function icon(res, target) {
 
 async function api(req, res, url) {
   const route = `${req.method} ${url.pathname}`;
+  // Overwatch : Blizzard ne retrouve plus un joueur par BattleTag, on cherche par pseudo et le joueur choisit son profil.
+  if (route === 'GET /api/ow-search') {
+    const name = String(url.searchParams.get('name') || '').split('#')[0].trim().slice(0, 40);
+    if (!name) return send(res, 400, { error: 'Pseudo manquant' });
+    try {
+      const r = await fetch(`https://overfast-api.tekrop.fr/players?name=${encodeURIComponent(name)}&limit=50`, { signal: AbortSignal.timeout(20000) });
+      if (!r.ok) return send(res, 200, { ok: false, error: `Recherche Overwatch indisponible (erreur ${r.status})` });
+      const body = await r.json();
+      const results = (body.results || []).map((p) => ({
+        id: p.player_id, name: p.name, avatar: p.avatar, namecard: p.namecard, title: p.title, isPublic: !!p.is_public, updatedAt: (p.last_updated_at || 0) * 1000,
+      })).sort((a, b) => b.isPublic - a.isPublic || b.updatedAt - a.updatedAt);
+      return send(res, 200, { ok: true, total: body.total ?? results.length, results });
+    } catch (e) {
+      return send(res, 200, { ok: false, error: 'Recherche Overwatch injoignable' });
+    }
+  }
   if (route === 'GET /api/demo') {
     return send(res, 200, { history: demoHistory(), meta: demoMeta() });
   }

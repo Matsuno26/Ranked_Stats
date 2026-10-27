@@ -48,6 +48,26 @@
     .actions { position: sticky; bottom: 0; display: flex; gap: 10px; justify-content: flex-end; align-items: center; padding: 16px 0; margin-top: 10px;
       background: linear-gradient(transparent, var(--page) 40%); }
     .actions .note { margin-right: auto; color: var(--muted); font-size: 13px; }
+    /* Sélecteur de profil Overwatch */
+    .picker { margin-top: 14px; }
+    .picker:empty { display: none; }
+    .picker p { margin: 0 0 10px; color: var(--chalk-2); font-size: 14px; }
+    .picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; max-height: 340px; overflow-y: auto; padding: 2px; }
+    .profile {
+      position: relative; display: flex; align-items: center; gap: 10px; text-align: left; cursor: pointer;
+      padding: 10px; border-radius: 12px; border: 1px solid var(--line); overflow: hidden; isolation: isolate;
+      background: var(--arena);
+    }
+    .profile::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--card) center / cover; opacity: .45; }
+    .profile:hover:not(:disabled) { border-color: var(--game); }
+    .profile:disabled { cursor: not-allowed; opacity: .45; }
+    .profile img { width: 44px; height: 44px; border-radius: 8px; flex: none; }
+    .profile b { display: block; font-size: 14px; }
+    .profile small { display: block; color: var(--chalk-2); font-size: 12px; text-shadow: 0 1px 2px #000; }
+    .chosen { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 14px; color: var(--chalk-2); }
+    .chosen img { width: 36px; height: 36px; border-radius: 8px; }
+    .chosen:empty { display: none; }
+
     @media (max-width: 640px) {
       .actions .note { display: none; }
       /* Téléphone : le titre garde toute la largeur, l'état du jeu passe sur la ligne suivante */
@@ -98,6 +118,7 @@
         const c = saved[g.id] || {};
         const fields = g.fields.map((f) => {
           const id = `${g.id}-${f.k}`;
+          if (f.type === 'hidden') return `<input type="hidden" id="${id}" data-k="${f.k}" value="${esc(c[f.k])}">`;
           const input = f.type === 'select'
             ? `<select id="${id}" data-k="${f.k}">${f.options.map(([v, l]) => `<option value="${v}" ${c[f.k] === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`
             : `<input id="${id}" data-k="${f.k}" type="text" value="${esc(c[f.k])}" placeholder="${esc(f.ph || '')}" autocomplete="off" spellcheck="false">`;
@@ -114,14 +135,65 @@
             <div class="game-body">
               <div class="grid">${fields}</div>
               <p class="help">${g.help}</p>
+              <div class="chosen"></div>
               <div class="test-row">
                 <button class="btn" type="button" data-test>Vérifier le compte</button>
                 <span class="test-out" aria-live="polite"></span>
               </div>
+              <div class="picker" aria-live="polite"></div>
             </div>
           </section>`;
       }).join('');
-      document.querySelectorAll('.game').forEach(updatePill);
+      document.querySelectorAll('.game').forEach((card) => { updatePill(card); showChosen(card); });
+    }
+
+    // Overwatch : profil choisi dans la liste (avatar + changer)
+    function showChosen(card) {
+      const box = card.querySelector('.chosen');
+      const id = card.querySelector('[data-k="blizzardId"]')?.value;
+      if (!id) { box.innerHTML = ''; return; }
+      const avatar = card.querySelector('[data-k="avatar"]').value;
+      box.innerHTML = `${avatar ? `<img src="${esc(avatar)}" alt="">` : ''}<span>Profil Overwatch choisi</span><button class="btn ghost" type="button" data-repick>Changer</button>`;
+    }
+
+    async function showPicker(card) {
+      const box = card.querySelector('.picker');
+      const name = card.querySelector('[data-k="battletag"]').value.split('#')[0].trim();
+      box.innerHTML = '<p>Recherche des profils…</p>';
+      const r = await fetch(`/api/ow-search?name=${encodeURIComponent(name)}`).then((x) => x.json()).catch(() => ({ ok: false, error: 'Serveur injoignable' }));
+      if (!r.ok) { box.innerHTML = `<p class="test-out err">✕ ${esc(r.error)}</p>`; return; }
+      if (!r.results.length) { box.innerHTML = `<p class="test-out err">✕ Aucun profil Overwatch nommé « ${esc(name)} ». Vérifie l'orthographe.</p>`; return; }
+      const pub = r.results.filter((p) => p.isPublic).length;
+      box.innerHTML = `<p>${r.results.length > 1 ? `${r.total} profils s'appellent « ${esc(name)} »` : 'Un profil trouvé'}. Choisis le tien grâce à ton avatar et ta carte de visite${pub < r.results.length ? ' (les profils privés ne peuvent pas être lus)' : ''} :</p>
+        <div class="picker-grid">${r.results.map((p) => `
+          <button class="profile" type="button" data-pick="${esc(p.id)}" data-avatar="${esc(p.avatar || '')}" style="--card: url('${esc(p.namecard || '')}')" ${p.isPublic ? '' : 'disabled'}>
+            <img src="${esc(p.avatar || '')}" alt="" loading="lazy">
+            <span><b>${esc(p.name)}</b><small>${p.isPublic ? esc(p.title || 'Sans titre') : 'Profil privé'}</small></span>
+          </button>`).join('')}</div>`;
+    }
+
+    async function verify(card) {
+      const btn = card.querySelector('[data-test]');
+      const out = card.querySelector('.test-out');
+      const acc = readGame(card);
+      if (!Accounts.isFilled(card.dataset.game, acc)) { out.className = 'test-out err'; out.textContent = 'Remplis d\'abord ton pseudo'; return; }
+      btn.disabled = true; out.className = 'test-out'; out.textContent = 'Recherche du compte…';
+      try {
+        const r = await fetch('/api/player', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: card.dataset.game, account: acc, force: true }) }).then((x) => x.json());
+        if (r.ok) {
+          const qs = Object.values(r.history || {});
+          const summary = qs.map((q) => `${q.name} : ${String(q.points.at(-1)?.l || q.points.at(-1)?.v).split(' · ')[0]}`).join(', ');
+          out.className = 'test-out ok'; out.textContent = `✓ ${r.meta?.player || 'Compte trouvé'}${summary ? ' : ' + summary : ''}`;
+        } else {
+          out.className = 'test-out err'; out.textContent = `✕ ${r.error}`;
+          // Overwatch introuvable par BattleTag : on propose les profils du même nom.
+          if (card.dataset.game === 'overwatch' && !acc.blizzardId && /introuvable/i.test(r.error)) {
+            out.textContent = 'Blizzard ne retrouve pas ce BattleTag directement.';
+            await showPicker(card);
+          }
+        }
+      } catch { out.className = 'test-out err'; out.textContent = '✕ Serveur injoignable'; }
+      btn.disabled = false;
     }
 
     function readGame(card) {
@@ -140,25 +212,34 @@
       card.querySelector('.pill').textContent = !on ? 'Masqué' : filled ? '✓ Suivi' : 'Pseudo manquant';
     }
 
-    document.addEventListener('input', (e) => { const card = e.target.closest('.game'); if (card) updatePill(card); });
+    document.addEventListener('input', (e) => {
+      const card = e.target.closest('.game');
+      if (!card) return;
+      if (e.target.dataset.k === 'battletag') {
+        card.querySelector('[data-k="blizzardId"]').value = ''; card.querySelector('[data-k="avatar"]').value = '';
+        card.querySelector('.picker').innerHTML = ''; showChosen(card);
+      }
+      updatePill(card);
+    });
     document.addEventListener('change', (e) => { const card = e.target.closest('.game'); if (card) updatePill(card); });
 
     document.addEventListener('click', async (e) => {
-      const testBtn = e.target.closest('[data-test]');
-      if (!testBtn) return;
-      const card = testBtn.closest('.game');
-      const out = card.querySelector('.test-out');
-      if (!Accounts.isFilled(card.dataset.game, readGame(card))) { out.className = 'test-out err'; out.textContent = 'Remplis d\'abord ton pseudo'; return; }
-      testBtn.disabled = true; out.className = 'test-out'; out.textContent = 'Recherche du compte…';
-      try {
-        const r = await fetch('/api/player', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: card.dataset.game, account: readGame(card), force: true }) }).then((x) => x.json());
-        if (r.ok) {
-          const qs = Object.values(r.history || {});
-          const summary = qs.map((q) => `${q.name} : ${q.points.at(-1)?.l || q.points.at(-1)?.v}`).join(' · ');
-          out.className = 'test-out ok'; out.textContent = `✓ ${r.meta?.player || 'Compte trouvé'}${summary ? ' — ' + summary : ''}`;
-        } else { out.className = 'test-out err'; out.textContent = `✕ ${r.error}`; }
-      } catch { out.className = 'test-out err'; out.textContent = '✕ Serveur injoignable'; }
-      testBtn.disabled = false;
+      const card = e.target.closest('.game');
+      if (!card) return;
+      if (e.target.closest('[data-test]')) return verify(card);
+      const pick = e.target.closest('[data-pick]');
+      if (pick) {
+        card.querySelector('[data-k="blizzardId"]').value = pick.dataset.pick;
+        card.querySelector('[data-k="avatar"]').value = pick.dataset.avatar;
+        card.querySelector('.picker').innerHTML = '';
+        showChosen(card);
+        return verify(card);
+      }
+      if (e.target.closest('[data-repick]')) {
+        card.querySelector('[data-k="blizzardId"]').value = ''; card.querySelector('[data-k="avatar"]').value = '';
+        showChosen(card); card.querySelector('.test-out').textContent = '';
+        return showPicker(card);
+      }
     });
 
     $('#save').addEventListener('click', () => {
