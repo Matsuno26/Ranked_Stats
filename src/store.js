@@ -1,52 +1,34 @@
-// Stockage local en fichiers JSON (dossier data/).
+// Historique des joueurs, stocké en JSON (dossier data/).
 import fs from 'node:fs';
 import path from 'node:path';
 
 const DATA_DIR = path.join(import.meta.dirname, '..', 'data');
-const CONFIG_FILE = path.join(DATA_DIR, 'config.json');
-// Réglages versionnés dans le dépôt : utilisés quand data/config.json n'existe pas (ex : hébergement en ligne).
-const SITE_CONFIG_FILE = path.join(import.meta.dirname, '..', 'site.config.json');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
-const MAX_POINTS = 20000;
-
-export const DEFAULT_CONFIG = {
-  pollMinutes: 5,
-  demo: true,
-  games: {
-    valorant: { enabled: false, name: '', tag: '', region: 'eu', platform: 'pc' },
-    overwatch: { enabled: false, battletag: '', platform: 'pc' },
-    rocketleague: { enabled: false, platform: 'epic', name: '', playerId: '' },
-    r6: { enabled: false, name: '', platform: 'uplay' },
-  },
-};
+const MAX_POINTS = 5000;
 
 function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
 }
-function writeJson(file, data) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-  fs.renameSync(tmp, file);
+
+// history = { [playerKey]: { [queueKey]: { name, unit, series, points: [{ t, v, l }] } } }
+// playerKey identifie un compte d'un jeu, ex : "valorant:eu:pc:pseudo#tag".
+const history = readJson(HISTORY_FILE, {});
+export const getPlayerHistory = (key) => history[key] || {};
+
+let saveTimer = null;
+function scheduleSave() {
+  // Écriture groupée : plusieurs joueurs mis à jour d'affilée = une seule écriture disque.
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const tmp = HISTORY_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(history));
+    fs.renameSync(tmp, HISTORY_FILE);
+  }, 1000);
 }
 
-export function loadConfig() {
-  const saved = readJson(CONFIG_FILE, null) || readJson(SITE_CONFIG_FILE, {});
-  const cfg = { ...DEFAULT_CONFIG, ...saved, games: {} };
-  for (const [g, def] of Object.entries(DEFAULT_CONFIG.games)) {
-    cfg.games[g] = {};
-    for (const k of Object.keys(def)) cfg.games[g][k] = saved.games?.[g]?.[k] ?? def[k];
-  }
-  return cfg;
-}
-export function saveConfig(cfg) { writeJson(CONFIG_FILE, cfg); }
-
-// history = { [game]: { [queueKey]: { name, unit, points: [{ t, v, l }] } } }
-let history = readJson(HISTORY_FILE, {});
-export const getHistory = () => history;
-
-export function mergeQueue(game, q) {
-  const g = (history[game] ||= {});
+export function mergeQueue(key, q) {
+  const g = (history[key] ||= {});
   const slot = (g[q.key] ||= { name: q.name, unit: q.unit, points: [] });
   slot.name = q.name; slot.unit = q.unit; slot.series = !!q.series;
   const pts = slot.points;
@@ -63,12 +45,6 @@ export function mergeQueue(game, q) {
     if (p && (!last || last.v !== p.v || last.l !== p.l)) { pts.push(p); changed = true; }
   }
   if (pts.length > MAX_POINTS) pts.splice(0, pts.length - MAX_POINTS);
-  if (changed) writeJson(HISTORY_FILE, history);
+  if (changed) scheduleSave();
   return changed;
-}
-
-
-export function clearHistory(game) {
-  if (game) delete history[game]; else history = {};
-  writeJson(HISTORY_FILE, history);
 }

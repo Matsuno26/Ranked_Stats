@@ -1,53 +1,54 @@
-// Ranked Stats — petit serveur : sert le site, interroge les APIs et garde l'historique.
+// Ranked Stats — petit serveur : sert le site et va chercher les stats du compte demandé par chaque visiteur.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { exec } from 'node:child_process';
-import crypto from 'node:crypto';
 import { PROVIDERS } from './src/providers.js';
-import { loadConfig, saveConfig, getHistory, mergeQueue, clearHistory } from './src/store.js';
+import { getPlayerHistory, mergeQueue } from './src/store.js';
 import { demoHistory, demoMeta } from './src/demo.js';
 
 try { process.loadEnvFile(path.join(import.meta.dirname, '.env')); } catch { /* pas de .env : jeux à clé indisponibles */ }
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1'; // en ligne : HOST=0.0.0.0
-// En ligne, ADMIN_PASSWORD protège les réglages : les visiteurs voient les stats sans pouvoir les modifier.
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const PUBLIC = path.join(import.meta.dirname, 'public');
-const GAMES = Object.keys(PROVIDERS);
+const CACHE_MS = 90e3; // un même compte n'est redemandé aux APIs qu'au bout de 90 s (protège les quotas)
 
-let config = loadConfig();
-const status = {}; // { [game]: { ok, error, updatedAt, meta } }
-let pollTimer = null;
-let polling = null;
-let lastPoll = 0;
+// Champs acceptés pour chaque jeu (le reste est ignoré) et identifiant unique du compte.
+const ACCOUNT = {
+  valorant: { fields: ['name', 'tag', 'region', 'platform'], key: (a) => `${a.region || 'eu'}:${a.platform || 'pc'}:${a.name}#${a.tag}` },
+  overwatch: { fields: ['battletag', 'platform'], key: (a) => `${a.platform || 'pc'}:${a.battletag}` },
+  rocketleague: { fields: ['platform', 'name', 'playerId'], key: (a) => `${a.platform || 'epic'}:${a.playerId || a.name}` },
+  r6: { fields: ['name', 'platform'], key: (a) => `${a.platform || 'uplay'}:${a.name}` },
+};
 
-async function pollGame(game) {
-  const cfg = config.games[game];
-  try {
-    const res = await PROVIDERS[game](cfg);
-    for (const q of res.queues) mergeQueue(game, q);
-    status[game] = { ok: true, error: null, updatedAt: Date.now(), meta: res.meta || {} };
-  } catch (e) {
-    status[game] = { ok: false, error: e.message, updatedAt: Date.now(), meta: status[game]?.meta || {} };
+const cache = new Map(); // playerKey -> { at, ok, error, meta, pending }
+
+function cleanAccount(game, input = {}) {
+  const out = {};
+  for (const f of ACCOUNT[game].fields) out[f] = String(input[f] ?? '').trim().slice(0, 64);
+  return out;
+}
+
+async function fetchPlayer(game, account, force) {
+  const key = `${game}:${ACCOUNT[game].key(account).toLowerCase()}`;
+  let entry = cache.get(key);
+  const fresh = entry && Date.now() - entry.at < (force ? 20e3 : CACHE_MS);
+  if (!fresh && !entry?.pending) {
+    // Une seule requête à la fois par compte : les visiteurs simultanés attendent la même réponse.
+    const pending = PROVIDERS[game](account)
+      .then((res) => {
+        for (const q of res.queues) mergeQueue(key, q);
+        return { ok: true, error: null, meta: res.meta || {} };
+      })
+      .catch((e) => ({ ok: false, error: e.message, meta: cache.get(key)?.meta || {} }))
+      .then((r) => { cache.set(key, { ...r, at: Date.now() }); });
+    cache.set(key, { ...(entry || { at: 0 }), pending });
+    entry = cache.get(key);
   }
-  return status[game];
-}
-
-// Une seule actualisation à la fois : un appel pendant qu'elle tourne attend la même.
-function pollAll() {
-  polling ||= (async () => {
-    for (const g of GAMES) if (config.games[g].enabled) await pollGame(g);
-  })().finally(() => { polling = null; lastPoll = Date.now(); });
-  return polling;
-}
-
-function schedule() {
-  clearInterval(pollTimer);
-  const minutes = Math.min(60, Math.max(1, Number(config.pollMinutes) || 5));
-  pollTimer = setInterval(pollAll, minutes * 60e3);
-  pollAll();
+  if (entry.pending) await entry.pending;
+  const done = cache.get(key);
+  return { game, ok: done.ok, error: done.error, meta: done.meta, updatedAt: done.at, history: getPlayerHistory(key) };
 }
 
 /* ------------------------------------------------------------------ HTTP */
@@ -60,72 +61,20 @@ function send(res, code, data) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
-    req.on('data', (c) => { raw += c; if (raw.length > 1e6) req.destroy(); });
+    req.on('data', (c) => { raw += c; if (raw.length > 1e5) req.destroy(); });
     req.on('end', () => { try { resolve(raw ? JSON.parse(raw) : {}); } catch { reject(new Error('JSON invalide')); } });
   });
 }
 
-function sanitizeConfig(input) {
-  const next = loadConfig();
-  next.pollMinutes = Math.min(60, Math.max(1, Number(input.pollMinutes) || 5));
-  next.demo = !!input.demo;
-  for (const g of GAMES) {
-    const src = input.games?.[g] || {};
-    for (const k of Object.keys(next.games[g])) {
-      if (k === 'enabled') next.games[g].enabled = !!src.enabled;
-      else if (src[k] != null) next.games[g][k] = String(src[k]).trim();
-    }
-  }
-  return next;
-}
-
-function isAdmin(req) {
-  if (!ADMIN_PASSWORD) return true;
-  const given = Buffer.from(String(req.headers['x-admin-password'] || ''));
-  const expected = Buffer.from(ADMIN_PASSWORD);
-  return given.length === expected.length && crypto.timingSafeEqual(given, expected);
-}
-
 async function api(req, res, url) {
   const route = `${req.method} ${url.pathname}`;
-  if (route === 'GET /api/config') return send(res, 200, { ...config, locked: !!ADMIN_PASSWORD });
-  const adminOnly = route === 'POST /api/config' || route === 'POST /api/clear' || url.pathname.startsWith('/api/test/');
-  if (adminOnly && !isAdmin(req)) return send(res, 401, { ok: false, error: 'Mot de passe admin incorrect' });
-  if (route === 'POST /api/config') {
-    config = sanitizeConfig(await readBody(req));
-    saveConfig(config);
-    schedule();
-    return send(res, 200, config);
+  if (route === 'GET /api/demo') {
+    return send(res, 200, { history: demoHistory(), meta: demoMeta() });
   }
-  if (route === 'GET /api/stats') {
-    const enabled = GAMES.filter((g) => config.games[g].enabled);
-    if (config.demo) {
-      const meta = demoMeta();
-      return send(res, 200, { demo: true, games: GAMES, history: demoHistory(), status: Object.fromEntries(GAMES.map((g) => [g, { ok: true, updatedAt: Date.now(), meta: meta[g] }])) });
-    }
-    const hist = getHistory();
-    return send(res, 200, { demo: false, games: enabled, history: Object.fromEntries(enabled.map((g) => [g, hist[g] || {}])), status, polling: !!polling, pollMinutes: config.pollMinutes });
-  }
-  if (route === 'POST /api/refresh') {
-    // Évite qu'un visiteur épuise les quotas des APIs en spammant le bouton.
-    if (Date.now() - lastPoll > 30e3 || polling) await pollAll();
-    return send(res, 200, { ok: true, status });
-  }
-  if (req.method === 'POST' && url.pathname.startsWith('/api/test/')) {
-    const game = url.pathname.split('/').pop();
-    if (!PROVIDERS[game]) return send(res, 404, { error: 'Jeu inconnu' });
-    const body = await readBody(req);
-    const cfg = { ...config.games[game], ...(body || {}) };
-    try {
-      const r = await PROVIDERS[game](cfg);
-      const summary = r.queues.map((q) => { const p = q.points[q.points.length - 1]; return `${q.name} : ${p?.l || p?.v}`; });
-      return send(res, 200, { ok: true, player: r.meta?.player, summary, matches: r.queues.reduce((n, q) => n + q.points.length, 0) });
-    } catch (e) { return send(res, 200, { ok: false, error: e.message }); }
-  }
-  if (route === 'POST /api/clear') {
-    const { game } = await readBody(req);
-    clearHistory(PROVIDERS[game] ? game : null);
-    return send(res, 200, { ok: true });
+  if (route === 'POST /api/player') {
+    const { game, account, force } = await readBody(req);
+    if (!ACCOUNT[game]) return send(res, 400, { error: 'Jeu inconnu' });
+    return send(res, 200, await fetchPlayer(game, cleanAccount(game, account), !!force));
   }
   return send(res, 404, { error: 'Route inconnue' });
 }
@@ -149,5 +98,4 @@ server.listen(PORT, HOST, () => {
   const link = `http://localhost:${PORT}`;
   console.log(`\n  Ranked Stats tourne sur ${link}\n  (Ctrl+C pour arrêter)\n`);
   if (process.argv.includes('--open')) exec(process.platform === 'win32' ? `start "" ${link}` : `open ${link}`);
-  schedule();
 });

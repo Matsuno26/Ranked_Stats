@@ -258,7 +258,7 @@ function render() {
   document.querySelectorAll('#scale button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.scale === scale)));
 
   $('#banner').innerHTML = data.demo
-    ? `<div class="banner"><span>🎮</span><span><strong>Mode démo</strong> — ces stats sont fictives. Configure tes comptes pour voir les tiennes.</span><a class="btn" href="/reglages">Configurer</a></div>`
+    ? `<div class="banner"><span>🎮</span><span><strong>Mode démo</strong> : ces stats sont fictives. Ajoute tes pseudos pour voir les tiennes.</span><a class="btn primary" href="/reglages">Ajouter mes comptes</a></div>`
     : '';
 
   if (!games.length) {
@@ -328,8 +328,25 @@ function updatedLabel() {
   $('#updated').textContent = ago < 1 ? 'Mis à jour à l\'instant' : `Mis à jour il y a ${ago} min`;
 }
 
-async function load() {
-  data = await fetch('/api/stats').then((r) => r.json());
+// Stats du visiteur : ses comptes (gardés dans son navigateur) sont envoyés au serveur, qui interroge les APIs.
+// Sans compte renseigné, on affiche la démo.
+async function load(force = false) {
+  const mine = Accounts.active();
+  if (!mine.length) {
+    const demo = await fetch('/api/demo').then((r) => r.json());
+    const games = Object.keys(GAME_INFO);
+    data = { demo: true, games, history: demo.history, status: Object.fromEntries(games.map((g) => [g, { ok: true, updatedAt: Date.now(), meta: demo.meta[g] }])) };
+  } else {
+    if (!data) $('#details').innerHTML = '<div class="card empty"><h2>Chargement de tes stats…</h2><p>La première visite peut prendre jusqu\'à une minute.</p></div>';
+    const results = await Promise.all(mine.map(({ game, account }) => fetch('/api/player', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game, account, force }),
+    }).then((r) => r.json()).catch(() => ({ game, ok: false, error: 'Serveur injoignable', history: {} }))));
+    data = { demo: false, games: mine.map((m) => m.game), history: {}, status: {} };
+    for (const r of results) {
+      data.history[r.game] = r.history || {};
+      data.status[r.game] = { ok: r.ok, error: r.error, updatedAt: r.updatedAt, meta: r.meta || {} };
+    }
+  }
   render();
   updatedLabel();
 }
@@ -361,13 +378,13 @@ document.addEventListener('click', (e) => {
 $('#refresh').addEventListener('click', async () => {
   const btn = $('#refresh');
   btn.disabled = true; btn.classList.add('loading');
-  try { await fetch('/api/refresh', { method: 'POST' }); await load(); toast('Stats actualisées'); } catch { toast('Serveur injoignable'); }
+  try { await load(true); toast('Stats actualisées'); } catch { toast('Serveur injoignable'); }
   btn.disabled = false; btn.classList.remove('loading');
 });
 
 let resizeTimer;
 window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => data && drawCharts(), 120); });
-setInterval(() => load().catch(() => {}), 60e3);
+setInterval(() => load().catch(() => {}), 2 * 60e3);
 setInterval(() => data && updatedLabel(), 30e3);
 
-load().catch(() => { $('#details').innerHTML = '<div class="card empty"><h2>Serveur injoignable</h2><p>Lance <b>start.bat</b> (ou <code>npm start</code>) puis recharge la page.</p></div>'; });
+load().catch(() => { $('#details').innerHTML = '<div class="card empty"><h2>Serveur injoignable</h2><p>Réessaie dans un instant en rechargeant la page.</p></div>'; });
