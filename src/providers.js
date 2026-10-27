@@ -106,7 +106,8 @@ async function overwatch(cfg) {
       if (!/introuvable/.test(e2.message)) throw e2;
       const exists = await blizzardProfileExists(id);
       if (exists === false) {
-        throw new Error(`Blizzard n'a aucun profil Overwatch pour ${cfg.battletag.trim()} : ce compte Battle.net n'a pas encore de carrière Overwatch 2 (vérifie que c'est bien le compte avec lequel tu joues).`);
+        // Blizzard cache complètement les profils privés (ni recherche, ni page de carrière) : c'est le cas le plus fréquent.
+        throw new Error(`Blizzard ne montre pas le profil de ${cfg.battletag.trim()} : il est sûrement privé (c'est le réglage par défaut). En jeu : Options → Social → Visibilité du profil de carrière → Public, puis réessaie quelques minutes après.`);
       }
       throw new Error('Profil trouvé chez Blizzard mais pas encore lisible : réessaie dans une dizaine de minutes.');
     }

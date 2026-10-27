@@ -22,7 +22,7 @@ const ACCOUNT_GAMES = [
       { k: 'blizzardId', type: 'hidden' },
       { k: 'avatar', type: 'hidden' },
     ],
-    help: 'Ton profil doit être <b>public</b> : en jeu, Options → Social → Visibilité du profil de carrière → Public.',
+    help: 'Ton profil doit être <b>public</b>, sinon Blizzard le cache complètement (il est privé par défaut) : en jeu, Options → Social → Visibilité du profil de carrière → <b>Public</b>.',
   },
   {
     id: 'rocketleague', name: 'Rocket League', short: 'RL', desc: 'Rang par mode (1v1, 2v2, 3v3…)',
