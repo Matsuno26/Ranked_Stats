@@ -4,80 +4,140 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ranked Stats</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23ff4655'/><path d='M7 22l6-7 5 4 7-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <meta name="description" content="Tes rangs Valorant, Overwatch, Rocket League et Rainbow Six au même endroit, et ta progression minute par minute.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 1l14 8v14l-14 8-14-8V9z' fill='%23ff4655'/><path d='M8 21l5-6 4 3 7-8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="style.css">
   <style>
-    .toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    .toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; margin-bottom: 22px; }
     .toolbar .lead { margin: 0; }
 
-    /* Aperçu */
-    .overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-bottom: 28px; }
-    .tile { padding: 16px; display: grid; gap: 10px; cursor: pointer; text-align: left; position: relative; overflow: hidden; }
-    .tile::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--game); }
-    .tile:hover { border-color: color-mix(in srgb, var(--game) 50%, transparent); }
-    .tile-head { display: flex; align-items: center; gap: 10px; }
-    .tile-head .game-badge { width: 30px; height: 30px; font-size: 12px; border-radius: 8px; }
-    .tile-name { font-weight: 600; color: var(--text-2); font-size: 14px; }
-    .tile-queue { margin-left: auto; font-size: 12px; color: var(--muted); }
-    .tile-rank { font-size: 22px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
-    .tile-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
-    .tile-value { color: var(--muted); font-size: 13px; }
-    .tile svg { display: block; }
+    /* ---------- Mur des rangs : l'emblème de chaque jeu, comme à l'écran de fin de match */
+    .wall { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-bottom: 40px; }
+    .trophy {
+      position: relative; isolation: isolate; overflow: hidden;
+      display: grid; justify-items: center; text-align: center; gap: 4px;
+      padding: 16px 18px 18px; border-radius: 18px; text-decoration: none;
+      background:
+        radial-gradient(120% 70% at 50% 34%, color-mix(in srgb, var(--game) 30%, transparent) 0%, transparent 62%),
+        linear-gradient(180deg, #1a1f2b, var(--stand));
+      border: 1px solid color-mix(in srgb, var(--game) 26%, var(--line));
+    }
+    .trophy::after { /* projecteur : fine lumière en haut de la carte */
+      content: ""; position: absolute; inset: 0 18% auto; height: 2px; z-index: -1;
+      background: linear-gradient(90deg, transparent, var(--game), transparent);
+    }
+    .trophy:hover { border-color: color-mix(in srgb, var(--game) 55%, var(--line)); }
+    .trophy-top { width: 100%; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; }
+    .trophy-game { font-weight: 700; color: var(--chalk); }
+    .trophy-queue { color: var(--haze); }
+    .emblem { width: 132px; height: 132px; display: grid; place-items: center; margin: 2px 0 0; }
+    .emblem img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 10px 22px rgba(0,0,0,.55)) drop-shadow(0 0 18px color-mix(in srgb, var(--game) 35%, transparent)); }
+    .emblem svg { width: 82%; height: 82%; filter: drop-shadow(0 10px 22px rgba(0,0,0,.55)); }
+    .emblem span, .panel-emblem span { display: contents; } /* emblème de secours si l'image ne charge pas */
+    .rank-name {
+      font: 900 clamp(30px, 3.2vw, 40px)/0.95 var(--display); text-transform: uppercase; letter-spacing: 0.01em;
+      text-wrap: balance; margin-top: 4px;
+    }
+    .rank-value { color: var(--chalk-2); font-size: 14px; font-variant-numeric: tabular-nums; }
+    .rank-value:empty { display: none; }
+    .progress { width: 100%; height: 6px; border-radius: 99px; background: #2a3142; overflow: hidden; margin-top: 10px; }
+    .progress span { display: block; height: 100%; width: calc(var(--p) * 100%); border-radius: inherit; background: var(--game); transform-origin: left; }
+    .trophy-foot { width: 100%; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; color: var(--chalk-2); margin-top: 6px; }
+    .trophy-foot .delta { font-size: 15px; }
+    .trophy.pending .rank-name { color: var(--haze); font-size: 28px; }
+    .trophy .err-mini { color: var(--down-text); font-size: 12px; }
 
-    .delta { font-weight: 700; font-size: 14px; white-space: nowrap; }
+    /* Une seule animation, au premier affichage : les emblèmes surgissent, les barres se remplissent. */
+    @media (prefers-reduced-motion: no-preference) {
+      .wall.intro .emblem > * { animation: emblem-in .7s cubic-bezier(.2, .9, .25, 1.25) both; animation-delay: calc(var(--i) * 110ms + 80ms); }
+      .wall.intro .progress span { animation: fill-in .9s cubic-bezier(.3, .7, .2, 1) both; animation-delay: calc(var(--i) * 110ms + 380ms); }
+    }
+    @keyframes emblem-in { from { opacity: 0; scale: .55; translate: 0 14px; } }
+    @keyframes fill-in { from { transform: scaleX(0); } }
+
+    /* ---------- Détail par jeu */
+    .details { display: grid; gap: 18px; }
+    .panel { padding: 20px 22px 22px; scroll-margin-top: 80px; }
+    .panel-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .panel-emblem { width: 48px; height: 48px; flex: none; }
+    .panel-emblem img, .panel-emblem svg { width: 100%; height: 100%; object-fit: contain; }
+    .panel-head h2 { margin: 0; font: 800 28px/1 var(--display); letter-spacing: .01em; }
+    .panel-head .player { color: var(--haze); font-size: 13px; margin-top: 3px; }
+    .queues { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; margin: 18px 0 6px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .stat { background: var(--stand); padding: 11px 14px; }
+    .stat-label { font-size: 12px; color: var(--haze); display: flex; align-items: center; gap: 6px; }
+    .stat-label img { width: 18px; height: 18px; object-fit: contain; }
+    .stat-value { font: 800 26px/1.1 var(--display); letter-spacing: .01em; margin-top: 2px; }
+    .stat-value .delta { font: inherit; }
+    .stat-sub { font-size: 12px; color: var(--chalk-2); }
+
+    .delta { font-weight: 700; font-size: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
     .delta.up { color: var(--up-text); }
     .delta.down { color: var(--down-text); }
-    .delta.flat { color: var(--muted); }
+    .delta.flat { color: var(--haze); }
 
-    /* Détail par jeu */
-    .details { display: grid; gap: 18px; }
-    .panel { padding: 20px; }
-    .panel-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-    .panel-head h2 { margin: 0; font-size: 18px; }
-    .panel-head .player { color: var(--muted); font-size: 13px; }
-    .queues { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 18px 0 8px; }
-    .stat { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
-    .stat-label { font-size: 12px; color: var(--muted); }
-    .stat-value { font-size: 18px; font-weight: 700; }
-    .stat-sub { font-size: 12px; color: var(--text-2); }
-    .chart { position: relative; margin-top: 10px; }
+    .chart { position: relative; margin-top: 14px; }
     .chart svg { display: block; width: 100%; overflow: visible; }
-    .chart .empty-note { position: absolute; top: 70px; left: 0; right: 0; text-align: center; color: var(--muted); font-size: 13px; pointer-events: none; }
+    .chart .empty-note { position: absolute; top: 80px; left: 0; right: 0; text-align: center; color: var(--haze); font-size: 13px; pointer-events: none; }
     .tooltip {
-      position: absolute; pointer-events: none; z-index: 5; min-width: 150px;
-      background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px;
-      box-shadow: 0 6px 24px rgba(0,0,0,.35); font-size: 13px; display: none;
+      position: absolute; pointer-events: none; z-index: 5; min-width: 160px;
+      background: #232939; border: 1px solid #343c50; border-radius: 10px; padding: 8px 11px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.45); font-size: 13px; display: none;
     }
-    .tooltip .tt-time { color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+    .tooltip .tt-time { color: var(--haze); font-size: 12px; margin-bottom: 2px; }
     .tooltip .tt-main { font-weight: 700; }
-    .tooltip .tt-row { display: flex; justify-content: space-between; gap: 14px; color: var(--text-2); }
-    .tooltip .tt-sub { font-size: 12px; color: var(--muted); margin: -2px 0 4px 16px; }
-    .panel-foot { display: flex; align-items: center; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+    .tooltip .tt-row { display: flex; justify-content: space-between; gap: 14px; color: var(--chalk-2); }
+    .tooltip .tt-sub { font-size: 12px; color: var(--haze); margin: -2px 0 4px 16px; }
+    .panel-foot { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    .panel-foot:empty { display: none; }
     .err { color: var(--down-text); font-size: 13px; }
 
     .empty { text-align: center; padding: 60px 20px; }
-    .empty h2 { margin: 0 0 8px; }
-    .empty p { color: var(--text-2); margin: 0 0 18px; }
+    .empty h2 { margin: 0 0 8px; font: 800 30px/1 var(--display); }
+    .empty p { color: var(--chalk-2); margin: 0 0 18px; }
 
-    .axis-label { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .axis-label { fill: var(--haze); font-size: 11px; font-variant-numeric: tabular-nums; }
     .grid-line { stroke: var(--hairline); stroke-width: 1; }
     .base-line { stroke: var(--axis); stroke-width: 1; }
     .spin { display: inline-block; }
     .loading .spin { animation: spin 0.8s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes spin { to { rotate: 360deg; } }
+
+    /* Téléphone : cartes du mur en ligne (emblème à gauche) pour tout voir sans trop défiler */
+    @media (max-width: 640px) {
+      .wall { grid-template-columns: 1fr; gap: 10px; }
+      .trophy {
+        grid-template-columns: 88px 1fr; grid-template-areas: "emb top" "emb name" "emb value" "emb bar" "emb foot";
+        justify-items: start; text-align: left; column-gap: 14px; row-gap: 2px; padding: 12px 14px;
+        background:
+          radial-gradient(70% 120% at 12% 50%, color-mix(in srgb, var(--game) 28%, transparent) 0%, transparent 70%),
+          linear-gradient(180deg, #1a1f2b, var(--stand));
+      }
+      .trophy-top { grid-area: top; }
+      .emblem { grid-area: emb; width: 88px; height: 88px; align-self: center; margin: 0; }
+      .rank-name { grid-area: name; font-size: 28px; margin: 0; }
+      .rank-value { grid-area: value; }
+      .progress { grid-area: bar; margin-top: 6px; }
+      .trophy-foot { grid-area: foot; margin-top: 2px; }
+      .panel { padding: 16px; }
+      .stat-value { font-size: 22px; }
+    }
   </style>
 </head>
 <body>
   <header class="top">
-    <a class="brand" href="/"><span class="brand-mark">R</span>Ranked Stats</a>
+    <a class="brand" href="/" aria-label="Ranked Stats, accueil"><span class="brand-mark">R</span><span class="brand-label">Ranked Stats</span></a>
     <nav class="nav">
       <a href="/" aria-current="page">Stats</a>
       <a href="/reglages">Mes comptes</a>
     </nav>
     <div class="top-right">
       <span id="updated"></span>
-      <button class="btn" id="refresh" type="button"><span class="spin">↻</span> Actualiser</button>
+      <button class="btn" id="refresh" type="button"><span class="spin" aria-hidden="true">↻</span> Actualiser</button>
     </div>
   </header>
 
@@ -85,7 +145,7 @@
     <div id="banner"></div>
     <div class="toolbar">
       <div>
-        <h1>Ta progression</h1>
+        <h1>Ta saison</h1>
         <p class="lead" id="period-label">Variation sur la dernière heure</p>
       </div>
       <div class="seg" role="group" aria-label="Échelle de temps" id="scale">
@@ -96,10 +156,10 @@
       </div>
     </div>
 
-    <section class="overview" id="overview"></section>
+    <section class="wall intro" id="overview" aria-label="Tes rangs actuels"></section>
     <section class="details" id="details"></section>
   </main>
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" role="status"></div>
 
   <script src="accounts.js"></script>
   <script src="app.js"></script>

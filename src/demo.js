@@ -1,36 +1,29 @@
 // Données factices pour voir le site tourner avant d'avoir branché ses comptes.
+import { valorantRank, RL_TIERS, rlIcon, r6RankFromRP } from './ranks.js';
 
 function rng(seed) {
   let s = seed >>> 0;
   return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
 }
 
-const VAL_TIERS = ['Fer 1', 'Fer 2', 'Fer 3', 'Bronze 1', 'Bronze 2', 'Bronze 3', 'Argent 1', 'Argent 2', 'Argent 3', 'Or 1', 'Or 2', 'Or 3',
-  'Platine 1', 'Platine 2', 'Platine 3', 'Diamant 1', 'Diamant 2', 'Diamant 3', 'Ascendant 1', 'Ascendant 2', 'Ascendant 3',
-  'Immortel 1', 'Immortel 2', 'Immortel 3', 'Radiant'];
 const OW_DIVS = ['Bronze', 'Argent', 'Or', 'Platine', 'Diamant', 'Maître', 'Grand maître', 'Champion'];
-const RL_TIERS = ['Bronze I', 'Bronze II', 'Bronze III', 'Argent I', 'Argent II', 'Argent III', 'Or I', 'Or II', 'Or III',
-  'Platine I', 'Platine II', 'Platine III', 'Diamant I', 'Diamant II', 'Diamant III', 'Champion I', 'Champion II', 'Champion III',
-  'Grand Champion I', 'Grand Champion II', 'Grand Champion III', 'Supersonic Legend'];
-const R6_RANKS = ['Cuivre', 'Bronze', 'Argent', 'Or', 'Platine', 'Émeraude', 'Diamant'];
-const ROMAN = ['V', 'IV', 'III', 'II', 'I'];
 
 const GAMES = {
   valorant: {
     queues: [['competitive', 'Compétitif', 'ELO', 1480]], step: [14, 24],
-    label: (v) => `${VAL_TIERS[Math.min(24, Math.max(0, Math.floor(v / 100)))]} · ${Math.round(v % 100)} RR`,
+    rank: (v) => { const rk = valorantRank(Math.min(27, Math.floor(v / 100) + 3)); return { l: rk.name, i: rk.icon, r: Math.round(v % 100) }; },
   },
   overwatch: {
     queues: [['tank', 'Tank', 'SR estimé', 2700], ['damage', 'Dégâts', 'SR estimé', 2950], ['support', 'Soutien', 'SR estimé', 3250]], step: [0, 100], snap: 100,
-    label: (v) => { const i = Math.min(7, Math.max(0, Math.floor((v - 1000) / 500))); return `${OW_DIVS[i]} ${5 - Math.floor(((v - 1000) % 500) / 100)}`; },
+    rank: (v) => { const i = Math.min(7, Math.max(0, Math.floor((v - 1000) / 500))); return { l: `${OW_DIVS[i]} ${5 - Math.floor(((v - 1000) % 500) / 100)}` }; },
   },
   rocketleague: {
     queues: [['ranked-duels', '1v1', 'MMR', 905], ['ranked-doubles', '2v2', 'MMR', 1085], ['ranked-standard', '3v3', 'MMR', 1010]], step: [7, 12],
-    label: (v) => `${RL_TIERS[Math.min(21, Math.max(0, Math.floor((v - 100) / 72)))]}`,
+    rank: (v) => { const tier = Math.min(22, Math.max(1, Math.floor((v - 100) / 72) + 1)); return { l: RL_TIERS[tier], i: rlIcon(tier), dv: 1 + (Math.floor(v / 18) % 4) }; },
   },
   r6: {
     queues: [['ranked', 'Classé', 'RP', 3180]], step: [18, 28],
-    label: (v) => v >= 4500 ? 'Champion' : `${R6_RANKS[Math.min(6, Math.max(0, Math.floor((v - 1000) / 500)))]} ${ROMAN[Math.min(4, Math.floor(((v - 1000) % 500) / 100))]}`,
+    rank: (v) => { const rk = r6RankFromRP(v); return { l: rk.name, i: rk.icon }; },
   },
 };
 
@@ -50,7 +43,7 @@ export function demoHistory(now = Date.now()) {
         v += (win ? amt : -amt) + (base - v) * 0.03; // marche aléatoire qui reste autour du niveau de base
         const val = def.snap ? Math.round(v / def.snap) * def.snap : Math.round(v);
         if (def.snap && pts.length && pts[pts.length - 1].v === val) return;
-        pts.push({ t, v: val, l: def.label(val) });
+        pts.push({ t, v: val, ...def.rank(val) });
       };
       // 120 jours de sessions le soir
       for (let d = 120; d >= 1; d--) {

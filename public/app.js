@@ -146,19 +146,6 @@ function niceTicks(min, max, n = 4) {
   return ticks;
 }
 
-function sparkline(s, color) {
-  const w = 120; const h = 36;
-  const vals = s.map((b) => b.v).filter((v) => v != null);
-  if (vals.length < 2) return '';
-  const mn = Math.min(...vals); const mx = Math.max(...vals);
-  const x = (i) => 2 + (i / (s.length - 1)) * (w - 6);
-  const y = (v) => mx === mn ? h / 2 : 4 + (1 - (v - mn) / (mx - mn)) * (h - 8);
-  let d = ''; let lastPt = null;
-  s.forEach((b, i) => { if (b.v == null) return; d += `${d ? 'L' : 'M'}${x(i).toFixed(1)},${y(b.v).toFixed(1)}`; lastPt = [x(i), y(b.v)]; });
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
-    <path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="3.5" fill="${color}" stroke="var(--surface)" stroke-width="2"/></svg>`;
-}
 
 function timeLabel(t, short) {
   const d = new Date(t);
@@ -354,13 +341,71 @@ function drawMulti(container, list, unit) {
 
 function gameColor(game) { return getComputedStyle(document.documentElement).getPropertyValue(`--${game}`).trim(); }
 
+// Nom du rang seul (les anciens historiques collaient « · 85 RR » au nom).
+const rankName = (pt) => String(pt?.l || '').split(' · ')[0];
+
+// Couleur d'un emblème dessiné quand le jeu ne fournit pas d'image (ex : Overwatch en démo).
+const TIER_COLORS = { fer: '#7d7f86', cuivre: '#b06a43', bronze: '#b4703c', argent: '#b8c2cc', or: '#e8b84a', platine: '#5fd4c4', emeraude: '#2fc47d',
+  diamant: '#7ab8ff', ascendant: '#3fcf8e', immortel: '#e4566e', maitre: '#f0a84a', grand: '#c39bff', champion: '#ff6b8a', top: '#ffd36a', radiant: '#fff2a8', supersonic: '#e9e4ff' };
+function tierColor(name) {
+  const w = rankName({ l: name }).split(' ')[0].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return TIER_COLORS[w] || '#8e95a8';
+}
+
+function emblem(pt, game, size = 'big') {
+  const name = rankName(pt);
+  if (pt?.i) return `<img src="/icon?u=${encodeURIComponent(pt.i)}" alt="${esc(name)}" ${size === 'big' ? 'width="132" height="132"' : 'width="48" height="48"'} loading="lazy" decoding="async" onerror="this.replaceWith(Object.assign(document.createElement('span'),{innerHTML:this.dataset.fallback}))" data-fallback="${esc(drawnEmblem(name, game))}">`;
+  return drawnEmblem(name, game);
+}
+function drawnEmblem(name, game) {
+  const c = tierColor(name);
+  const initials = name ? name.replace(/[0-9IVX ]+$/, '').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() : '?';
+  const id = `g${Math.random().toString(36).slice(2, 8)}`;
+  return `<svg viewBox="0 0 100 100" role="img" aria-label="${esc(name || 'Non classé')}">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}"/><stop offset="1" stop-color="${c}" stop-opacity=".55"/></linearGradient></defs>
+    <path d="M50 4 90 27v46L50 96 10 73V27z" fill="url(#${id})" stroke="rgba(255,255,255,.55)" stroke-width="3"/>
+    <path d="M50 18 78 34v32L50 82 22 66V34z" fill="rgba(10,13,20,.55)"/>
+    <text x="50" y="61" text-anchor="middle" font-family="Big Shoulders Display, Impact, sans-serif" font-weight="900" font-size="30" fill="#fff">${esc(initials)}</text></svg>`;
+}
+
+// Avancement dans le palier actuel, quand le jeu permet de le calculer.
+function progressOf(game, pt) {
+  if (!pt) return null;
+  const name = rankName(pt);
+  if (game === 'valorant') {
+    if (/^radiant/i.test(name)) return null;
+    const rr = Number.isFinite(pt.r) ? pt.r : Math.round(pt.v % 100);
+    return { p: Math.max(0, Math.min(1, rr / 100)), text: `${rr} / 100 RR` };
+  }
+  if (game === 'rocketleague') {
+    if (!pt.dv || /supersonic/i.test(name)) return null;
+    return { p: pt.dv / 4, text: `Division ${pt.dv} sur 4` };
+  }
+  if (game === 'overwatch') {
+    const m = name.match(/(\d)$/);
+    if (!m) return null;
+    const step = 6 - Number(m[1]);
+    return { p: step / 5, text: `Palier ${step} sur 5` };
+  }
+  if (game === 'r6') {
+    const m = name.match(/ (I|II|III|IV|V)$/);
+    if (!m) return null;
+    const step = 6 - ['I', 'II', 'III', 'IV', 'V'].indexOf(m[1]) - 1;
+    return { p: step / 5, text: `Division ${m[1]}` };
+  }
+  return null;
+}
+
+// Rocket League sans MMR exact : la valeur n'est qu'un indice interne, on ne l'affiche pas comme un score.
+const isIndex = (q) => q?.unit === 'Indice de rang';
+
 function render() {
   const games = data.games;
   $('#period-label').textContent = `Variation sur ${SCALES[scale].label}`;
   document.querySelectorAll('#scale button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.scale === scale)));
 
   $('#banner').innerHTML = data.demo
-    ? `<div class="banner"><span>🎮</span><span><strong>Mode démo</strong> : ces stats sont fictives. Ajoute tes pseudos pour voir les tiennes.</span><a class="btn primary" href="/reglages">Ajouter mes comptes</a></div>`
+    ? `<div class="banner"><span><strong>Mode démo</strong> : ces rangs sont fictifs. Ajoute tes pseudos pour voir les tiens.</span><a class="btn primary" href="/reglages">Ajouter mes comptes</a></div>`
     : '';
 
   if (!games.length) {
@@ -369,24 +414,25 @@ function render() {
     return;
   }
 
-  let tiles = ''; let panels = '';
-  for (const game of games) {
+  let wall = ''; let panels = '';
+  games.forEach((game, gi) => {
     const info = GAME_INFO[game];
     const st = data.status[game] || {};
     const qs = data.history[game] || {};
     const qk = mainQueue(game);
     const q = qk ? qs[qk] : null;
-    const color = gameColor(game);
     const sum = q ? summary(q.points) : null;
+    const cur = sum?.current;
+    const prog = progressOf(game, cur);
 
-    tiles += `<button class="card tile" data-game="${game}" data-goto="${game}" type="button">
-      <div class="tile-head"><div class="game-badge">${info.short}</div><span class="tile-name">${info.name}</span><span class="tile-queue">${esc(q?.name || '')}</span></div>
-      <div class="tile-rank">${sum?.current ? esc(sum.current.l || fmt(sum.current.v)) : '<span style="color:var(--muted)">En attente…</span>'}</div>
-      <div class="tile-foot">
-        <div><div class="tile-value">${sum?.current ? `${fmt(sum.current.v)} ${esc(q.unit)}` : (st.error ? 'Erreur — voir détail' : 'Pas encore de données')}</div>${sum ? deltaHtml(sum.delta) : ''}</div>
-        ${sum ? sparkline(sum.s, color) : ''}
-      </div>
-    </button>`;
+    wall += `<a class="trophy${cur ? '' : ' pending'}" data-game="${game}" href="#game-${game}" style="--i:${gi}">
+      <div class="trophy-top"><span class="trophy-game">${info.name}</span><span class="trophy-queue">${esc(q?.name || '')}</span></div>
+      <div class="emblem">${cur ? emblem(cur, game) : drawnEmblem('', game)}</div>
+      <div class="rank-name">${cur ? esc(rankName(cur)) : (st.error ? 'Introuvable' : 'En attente')}</div>
+      <div class="rank-value">${cur ? (isIndex(q) ? '' : `${fmt(cur.v)} ${esc(q.unit)}`) : st.error ? '<span class="err-mini">Voir le détail plus bas</span>' : 'Premières données en route'}</div>
+      ${prog ? `<div class="progress" role="img" aria-label="${esc(prog.text)}"><span style="--p:${prog.p.toFixed(3)}"></span></div>` : ''}
+      ${cur ? `<div class="trophy-foot"><span>${prog ? esc(prog.text) : ''}</span>${deltaHtml(sum.delta)}</div>` : ''}
+    </a>`;
 
     const keys = queuesOf(game);
     const shown = shownQueues(game);
@@ -395,30 +441,35 @@ function render() {
       + (keys.length > 2 ? `<button class="chip" type="button" data-queue-all aria-pressed="${shown.length === keys.length}">Tous</button>` : '');
     const meta = st.meta || {};
     const wl = meta.wins != null ? `<div class="stat"><div class="stat-label">Victoires / défaites (saison)</div><div class="stat-value">${meta.wins} / ${meta.losses}</div><div class="stat-sub">${meta.wins + meta.losses ? Math.round((meta.wins / (meta.wins + meta.losses)) * 100) + ' % de victoires' : ''}</div></div>` : '';
+
+    let body = `<p class="lead" style="margin:16px 0 0">${st.error ? '' : 'Les données arrivent à la prochaine actualisation.'}</p>`;
+    if (sum && multi) {
+      body = `<div class="stats">
+        ${shown.map((k) => { const qq = qs[k]; const ss = summary(qq.points); const c = ss.current; return `<div class="stat"><div class="stat-label"><i class="swatch" style="background:${queueColor(game, k)}"></i>${esc(qq.name)}</div><div class="stat-value">${esc(rankName(c) || '—')}</div><div class="stat-sub">${c && !isIndex(qq) ? fmt(c.v) + ' ' + esc(qq.unit) : ''} ${deltaHtml(ss.delta)}</div></div>`; }).join('')}
+        ${wl}
+      </div>
+      <div class="chart" data-chart="${game}"></div>`;
+    } else if (sum) {
+      body = `<div class="stats">
+        <div class="stat"><div class="stat-label">Variation</div><div class="stat-value">${deltaHtml(sum.delta)}</div><div class="stat-sub">${isIndex(q) ? 'progression de rang' : esc(q.unit)} sur ${SCALES[scale].label}</div></div>
+        <div class="stat"><div class="stat-label">Pic sur la période</div><div class="stat-value">${sum.peak == null ? '—' : isIndex(q) ? esc(rankName(q.points.findLast((p) => p.v === sum.peak))) : fmt(sum.peak)}</div><div class="stat-sub">${isIndex(q) ? 'meilleur rang' : esc(q.unit)}</div></div>
+        <div class="stat"><div class="stat-label">${q.series === false ? 'Changements de rang' : 'Matchs joués'}</div><div class="stat-value">${sum.matches}</div><div class="stat-sub">sur ${SCALES[scale].label}</div></div>
+        ${wl}
+      </div>
+      <div class="chart" data-chart="${game}"></div>`;
+    }
+
     panels += `<section class="card panel" data-game="${game}" id="game-${game}">
       <div class="panel-head">
-        <div class="game-badge">${info.short}</div>
+        <div class="panel-emblem">${cur ? emblem(cur, game, 'small') : `<div class="game-badge">${info.short}</div>`}</div>
         <div><h2>${info.name}</h2><div class="player">${esc(meta.player || '')}</div></div>
         <div class="queues" role="group" aria-label="Modes affichés">${chips}</div>
       </div>
-      ${sum && multi ? `<div class="stats">
-        ${shown.map((k) => { const qq = qs[k]; const ss = summary(qq.points); return `<div class="stat"><div class="stat-label"><i class="swatch" style="background:${queueColor(game, k)}"></i>${esc(qq.name)}</div><div class="stat-value">${esc(ss.current?.l || '—')}</div><div class="stat-sub">${ss.current ? fmt(ss.current.v) + ' ' + esc(qq.unit) : ''} · ${deltaHtml(ss.delta)}</div></div>`; }).join('')}
-        ${wl}
-      </div>
-      <div class="chart" data-chart="${game}"></div>` : sum ? `<div class="stats">
-        <div class="stat"><div class="stat-label">Rang actuel</div><div class="stat-value">${esc(sum.current.l || '—')}</div><div class="stat-sub">${fmt(sum.current.v)} ${esc(q.unit)}</div></div>
-        <div class="stat"><div class="stat-label">Variation (${SCALES[scale].label})</div><div class="stat-value">${deltaHtml(sum.delta)}</div><div class="stat-sub">${esc(q.unit)}</div></div>
-        <div class="stat"><div class="stat-label">Pic sur la période</div><div class="stat-value">${sum.peak != null ? fmt(sum.peak) : '—'}</div><div class="stat-sub">${esc(q.unit)}</div></div>
-        <div class="stat"><div class="stat-label">${q.series === false ? 'Changements de rang' : 'Matchs'}</div><div class="stat-value">${sum.matches}</div><div class="stat-sub">sur ${SCALES[scale].label}</div></div>
-        ${wl}
-      </div>
-      <div class="chart" data-chart="${game}"></div>` : `<p class="lead" style="margin:16px 0 0">${st.error ? '' : 'Les données arrivent à la prochaine actualisation.'}</p>`}
-      <div class="panel-foot">
-        ${st.error ? `<span class="err">⚠ ${esc(st.error)}</span>` : ''}
-      </div>
+      ${body}
+      <div class="panel-foot">${st.error ? `<span class="err">⚠ ${esc(st.error)}</span>` : ''}</div>
     </section>`;
-  }
-  $('#overview').innerHTML = tiles;
+  });
+  $('#overview').innerHTML = wall;
   $('#details').innerHTML = panels;
   drawCharts();
 }
@@ -465,6 +516,7 @@ async function load(force = false) {
   }
   render();
   updatedLabel();
+  setTimeout(() => $('#overview').classList.remove('intro'), 2000);
 }
 
 function toast(msg) {
@@ -492,8 +544,6 @@ document.addEventListener('click', (e) => {
     else cur = [...cur, chip.dataset.queue];
     selected[game] = cur; store.set('selected', selected); render();
   }
-  const tile = e.target.closest('[data-goto]');
-  if (tile) document.getElementById(`game-${tile.dataset.goto}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
 

@@ -3,6 +3,8 @@
 //   - series: true  => les points ont un vrai horodatage par match (historique complet)
 //   - series: false => instantané "maintenant" (on enregistre seulement si la valeur change)
 
+import { valorantRank, RL_TIERS, rlIcon, r6RankFromRP, r6RankFromName } from './ranks.js';
+
 const UA = 'RankedStats/1.0 (suivi perso)';
 
 async function getJson(url, headers = {}, label = 'API') {
@@ -49,7 +51,7 @@ async function valorant(cfg) {
   const body = await getJson(url, { Authorization: key }, 'HenrikDev');
   const history = body?.data?.history || [];
   const points = history
-    .map((h) => ({ t: Date.parse(h.date), v: h.elo, l: `${h.tier?.name || '?'} · ${h.rr} RR`, d: h.last_change }))
+    .map((h) => { const rk = valorantRank(h.tier?.id); return { t: Date.parse(h.date), v: h.elo, l: rk.name, i: rk.icon, r: h.rr }; })
     .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v))
     .sort((a, b) => a.t - b.t);
   return {
@@ -79,7 +81,7 @@ async function overwatch(cfg) {
     const idx = OW_DIVS.indexOf(r.division);
     const tier = Number(r.tier) || 5;
     const v = idx < 0 ? 0 : 1000 + idx * 500 + (5 - tier) * 100;
-    queues.push({ key: role, name, unit: 'SR estimé', series: false, points: [{ t: now, v, l: `${OW_NAMES[r.division] || cap(r.division)} ${tier}` }] });
+    queues.push({ key: role, name, unit: 'SR estimé', series: false, points: [{ t: now, v, l: `${OW_NAMES[r.division] || cap(r.division)} ${tier}`, i: r.rank_icon || undefined }] });
   }
   if (!queues.length) throw new Error(`Pas encore de rang classé en saison ${comp.season ?? 'actuelle'}`);
   return { queues, meta: { player: body?.username || cfg.battletag, season: comp.season } };
@@ -91,9 +93,6 @@ const RL_PLAYLISTS = {
   'ranked-duels': '1v1', 'ranked-doubles': '2v2', 'ranked-standard': '3v3', 'ranked-solo-standard': '3v3 solo',
   'ranked-hoops': 'Hoops', 'ranked-rumble': 'Rumble', 'ranked-dropshot': 'Dropshot', 'ranked-snowday': 'Snow Day',
 };
-const RL_TIERS = ['Non classé', 'Bronze I', 'Bronze II', 'Bronze III', 'Argent I', 'Argent II', 'Argent III', 'Or I', 'Or II', 'Or III',
-  'Platine I', 'Platine II', 'Platine III', 'Diamant I', 'Diamant II', 'Diamant III', 'Champion I', 'Champion II', 'Champion III',
-  'Grand Champion I', 'Grand Champion II', 'Grand Champion III', 'Supersonic Legend'];
 
 async function rocketleague(cfg) {
   const key = serverKey('BALLCHASING_API_KEY', 'Rocket League');
@@ -121,16 +120,17 @@ async function rocketleague(cfg) {
     if (!me) continue;
     foundName ||= me.name;
     const t = Date.parse(r.date || r.created);
-    let v = null; let l = '';
+    let v = null; let l = ''; let icon; let dv;
     if (Number.isFinite(me.mmr)) { v = me.mmr; hasMmr = true; }
     // Le rang n'est présent que si le replay a été uploadé avec (BakkesMod) : sinon le match est ignoré.
     if (me.rank?.tier != null) {
       const tier = Number(me.rank.tier); const div = Number(me.rank.division);
-      l = `${RL_TIERS[tier] || me.rank.name || 'Rang ' + tier}${div ? ` · Div ${div}` : ''}`;
+      l = RL_TIERS[tier] || me.rank.name || `Rang ${tier}`;
+      icon = rlIcon(tier); dv = div || undefined;
       if (v == null) v = tier * 100 + ((div || 1) - 1) * 25; // indice de rang si pas de MMR exact
     }
     if (v == null || !Number.isFinite(t)) continue;
-    (byQueue[pl] ||= []).push({ t, v, l });
+    (byQueue[pl] ||= []).push({ t, v, l, i: icon, dv });
   }
   const queues = Object.entries(byQueue).map(([pl, points]) => ({
     key: pl, name: RL_PLAYLISTS[pl] || pl, unit: hasMmr ? 'MMR' : 'Indice de rang', series: true,
@@ -146,15 +146,6 @@ async function rocketleague(cfg) {
 
 /* -------------------------------------------------------- Rainbow Six Siege */
 // R6 Data / Arenyze (clé gratuite) : https://r6.arenyze.com/api-docs
-const R6_RANKS = ['Cuivre', 'Bronze', 'Argent', 'Or', 'Platine', 'Émeraude', 'Diamant'];
-const ROMAN = ['V', 'IV', 'III', 'II', 'I'];
-function r6RankFromRP(rp) {
-  if (rp >= 4500) return 'Champion';
-  if (rp < 1000) return 'Cuivre V';
-  const i = Math.min(R6_RANKS.length - 1, Math.floor((rp - 1000) / 500));
-  const div = Math.min(4, Math.floor(((rp - 1000) % 500) / 100));
-  return `${R6_RANKS[i]} ${ROMAN[div]}`;
-}
 
 // La structure exacte de la réponse varie selon la version : on cherche l'objet qui porte les "rank_points".
 function findRanked(node, path = '', out = []) {
@@ -182,22 +173,17 @@ async function r6(cfg) {
   // L'API fournit aussi l'historique daté des rank points : on s'en sert comme historique par match.
   const raw = body?.history?.data?.history?.data;
   const history = (Array.isArray(raw) ? raw : [])
-    .map(([date, e]) => ({ t: Date.parse(date), v: Number(e?.value), l: r6RankFr(e?.metadata?.rank) || r6RankFromRP(Number(e?.value)) }))
+    .map(([date, e]) => { const v = Number(e?.value); const rk = r6RankFromName(e?.metadata?.rank) || r6RankFromRP(v); return { t: Date.parse(date), v, l: rk.name, i: rk.icon }; })
     .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v) && p.v > 0)
     .sort((a, b) => a.t - b.t);
   if (history.length) {
     return { queues: [{ key: 'ranked', name: 'Classé', unit: 'RP', series: true, points: history }], meta };
   }
   return {
-    queues: [{ key: 'ranked', name: 'Classé', unit: 'RP', series: false, points: [{ t: Date.now(), v: rp, l: r6RankFromRP(rp) }] }],
+    queues: [{ key: 'ranked', name: 'Classé', unit: 'RP', series: false, points: [{ t: Date.now(), v: rp, l: r6RankFromRP(rp).name, i: r6RankFromRP(rp).icon }] }],
     meta,
   };
 }
 
-const R6_FR = { copper: 'Cuivre', bronze: 'Bronze', silver: 'Argent', gold: 'Or', platinum: 'Platine', emerald: 'Émeraude', diamond: 'Diamant', champion: 'Champion', champions: 'Champion' };
-function r6RankFr(name) {
-  if (!name) return '';
-  return String(name).replace(/[a-z]+/gi, (w) => R6_FR[w.toLowerCase()] || w);
-}
 
 export const PROVIDERS = { valorant, overwatch, rocketleague, r6 };

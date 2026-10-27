@@ -67,6 +67,27 @@ function readBody(req) {
   });
 }
 
+// Icônes de rang : certains sites (ballchasing) refusent l'affichage direct sur un autre site,
+// le serveur les récupère donc lui-même et les garde en mémoire.
+const ICON_HOSTS = ['media.valorant-api.com', 'ballchasing.com', 'r6.arenyze.com', 'static.playoverwatch.com'];
+const iconCache = new Map(); // url -> { type, body }
+async function icon(res, target) {
+  let u;
+  try { u = new URL(target); } catch { res.writeHead(400); return res.end(); }
+  if (u.protocol !== 'https:' || !ICON_HOSTS.includes(u.hostname)) { res.writeHead(403); return res.end(); }
+  let hit = iconCache.get(u.href);
+  if (!hit) {
+    const r = await fetch(u, { headers: { 'User-Agent': 'RankedStats/1.0' }, signal: AbortSignal.timeout(15000) }).catch(() => null);
+    const type = r?.headers.get('content-type') || '';
+    if (!r?.ok || !type.startsWith('image/')) { res.writeHead(404); return res.end(); }
+    hit = { type, body: Buffer.from(await r.arrayBuffer()) };
+    if (iconCache.size > 300) iconCache.delete(iconCache.keys().next().value);
+    iconCache.set(u.href, hit);
+  }
+  res.writeHead(200, { 'Content-Type': hit.type, 'Cache-Control': 'public, max-age=604800, immutable' });
+  res.end(hit.body);
+}
+
 async function api(req, res, url) {
   const route = `${req.method} ${url.pathname}`;
   if (route === 'GET /api/demo') {
@@ -85,6 +106,7 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
+    if (url.pathname === '/icon') return await icon(res, url.searchParams.get('u'));
     let file = url.pathname === '/' ? '/index.html' : url.pathname;
     if (file === '/reglages') file = '/settings.html';
     const full = path.normalize(path.join(PUBLIC, file));
