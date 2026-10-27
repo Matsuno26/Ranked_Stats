@@ -10,7 +10,8 @@ import { demoHistory, demoMeta } from './src/demo.js';
 try { process.loadEnvFile(path.join(import.meta.dirname, '.env')); } catch { /* pas de .env : jeux à clé indisponibles */ }
 
 const PORT = Number(process.env.PORT) || 3000;
-const HOST = process.env.HOST || '127.0.0.1'; // en ligne : HOST=0.0.0.0
+// En local : seulement ce PC. Sur Render : IPv4 et IPv6 (« :: »), son contrôle de santé passe par l'IPv6.
+const HOST = process.env.RENDER ? '::' : (process.env.HOST || '127.0.0.1');
 const PUBLIC = path.join(import.meta.dirname, 'public');
 const CACHE_MS = 90e3; // un même compte n'est redemandé aux APIs qu'au bout de 90 s (protège les quotas)
 
@@ -80,8 +81,9 @@ async function api(req, res, url) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
   try {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     let file = url.pathname === '/' ? '/index.html' : url.pathname;
     if (file === '/reglages') file = '/settings.html';

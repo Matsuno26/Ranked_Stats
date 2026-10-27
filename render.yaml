@@ -7,12 +7,10 @@ services:
     plan: free
     buildCommand: npm install
     startCommand: node server.js
-    healthCheckPath: /
+    healthCheckPath: /healthz
     envVars:
       - key: NODE_VERSION
         value: "22"
-      - key: HOST
-        value: 0.0.0.0
       - key: HENRIK_API_KEY
         sync: false
       - key: BALLCHASING_API_KEY
